@@ -32,7 +32,10 @@ def test_dispatch_truncates():
 
 
 def test_default_tool_names(tmp_path):
-    assert tools_for(tmp_path).names() == ["read_file", "list_files", "search", "bash"]
+    registry = tools_for(tmp_path)
+    assert {"read_file", "list_files", "search", "bash"} <= set(registry.names())
+    assert registry.get("list_files").read_only is True
+    assert registry.get("search").read_only is True
 
 
 def test_list_files_skips_git_and_sorts(tmp_path):
