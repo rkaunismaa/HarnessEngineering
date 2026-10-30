@@ -82,7 +82,7 @@ The weak model is Ollama's 4B: `AGENT_BASE_URL=http://localhost:11434/v1 AGENT_M
 On this trivial task it passed (162 prompt tokens: a different tokenizer and template count differently). Expect it to fail on harder tasks later; this is the baseline. Now break things on purpose and read the messages:
 
 - Point `AGENT_BASE_URL` at a closed port (`http://localhost:1/v1`): the smoke test must exit 1 with a readable "could not reach" line, not a traceback.
-- Set `AGENT_MODEL=does-not-exist`: what does the server say, and does your command still exit cleanly?
+- Set `AGENT_MODEL=does-not-exist`: LM Studio (observed) quietly answers with the loaded model anyway, so this still passes there. Try it against Ollama too and compare: a missing model is an error there, and your command should still exit 1 without a traceback.
 
 ## Extras
 
