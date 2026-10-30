@@ -55,7 +55,7 @@ New: `agent/context.py`. Changed: `agent/loop.py`, `agent/events.py`, `agent/cli
 
 **`ContextManager(window, threshold=0.8, keep_recent=6)`**: `last_prompt_tokens: int | None`, updated after every main request from the response's `usage` (streamed or not; `None` when the server sent none). `needs_compaction(messages)` compares `threshold * window` with `last_prompt_tokens` plus `estimate_tokens` of the messages added since that request, or with `estimate_tokens(messages)` when there is no usage yet. After you trim or compact, the old count is stale: lower it by the estimated saving after a trim and forget it after a compaction.
 
-**`is_context_overflow(exc)`**: true when `"context"` appears, ignoring case, in `str(exc)`, the error body or the response text. Use the same text in the `Model request failed: ...` error message so a failure says what the server said, not just `Error code: 400`.
+**`is_context_overflow(exc)`**: true when `"context"` appears, ignoring case, in `str(exc)`, the error body or the response text. Use the same text in the `Model request failed: ...` error message so a failure says what the server said, not just `Error code: 400`. This refines lesson 3's `f"Model request failed: {exc}"`. Add the body or response text only when `str(exc)` does not already contain it; for most errors `str(exc)` already includes the body, and repeating it makes the message noisy.
 
 **`AgentEvents.on_compact(before: int, after: int)`**: a new method that does nothing by default; estimated tokens before and after a compaction.
 

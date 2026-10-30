@@ -19,14 +19,19 @@ MAX_MESSAGE_CHARS = 2_000
 
 
 def error_text(exc) -> str:
-    """Everything an API error says. LM Studio's ``str(exc)`` is just ``Error code: 400``; the
-    wording is in the parsed ``body`` and the raw response text."""
-    parts = [str(exc), str(getattr(exc, "body", "") or "")]
+    """Everything an API error says, each piece once. Usually ``str(exc)`` already contains the
+    body; LM Studio's is just ``Error code: 400``, with the wording only in the parsed ``body``
+    and the raw response text."""
+    text = str(exc)
+    extras = [str(getattr(exc, "body", "") or "")]
     try:
-        parts.append(exc.response.text)
+        extras.append(exc.response.text)
     except Exception:
         pass
-    return " ".join(p for p in parts if p)
+    for extra in extras:
+        if extra and extra not in text:
+            text = f"{text} {extra}"
+    return text
 
 
 def is_context_overflow(exc) -> bool:

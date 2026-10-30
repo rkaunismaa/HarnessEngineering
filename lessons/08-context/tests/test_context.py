@@ -3,7 +3,7 @@ import math
 
 import pytest
 
-from agent.context import (ContextManager, compact, estimate_tokens, is_context_overflow,
+from agent.context import (ContextManager, compact, error_text, estimate_tokens, is_context_overflow,
                            split_index, trim_old_tool_results)
 from agent.events import AgentEvents
 from agent.loop import Agent
@@ -263,6 +263,16 @@ def test_overflow_is_detected_in_the_body_not_just_str(tmp_path):
                            ContextManager(10**6, keep_recent=4))
     agent2.messages = long_history()
     assert "exceeds the available context size" in agent2.run("go").error
+
+
+def test_error_text_does_not_repeat_the_body():
+    import httpx2
+    import openai
+    body = {"error": {"message": "no such model: zzz-unique"}}
+    response = httpx2.Response(404, request=httpx2.Request("POST", "http://fake/v1"), json=body)
+    exc = openai.NotFoundError("Error code: 404 - " + str(body), response=response, body=body)
+    assert error_text(exc).count("zzz-unique") == 1
+    assert error_text(lm_studio_overflow()).count("exceeds the available context size") == 1
 
 
 def test_other_bad_requests_are_not_retried(tmp_path):
