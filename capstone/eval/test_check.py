@@ -31,10 +31,21 @@ def test_unfixed_fails(tmp_path):
 
 def test_fix_in_report_passes(tmp_path):
     work = _copy(tmp_path)
-    _replace(work / "ledger" / "report.py", "<= t.date < end", "<= t.date <= end")
+    path = work / "ledger" / "report.py"
+    assert path.read_text().count("<= t.date < end") == 2
+    _replace(path, "<= t.date < end", "<= t.date <= end")
     result = check.check_fix(work, ORIGINAL)
     assert result.passed is True, result.output
     assert result.tests_modified is False
+
+
+def test_fixing_only_monthly_totals_fails(tmp_path):
+    work = _copy(tmp_path)
+    path = work / "ledger" / "report.py"
+    _replace(path, "if not (start <= t.date < end):", "if not (start <= t.date <= end):")
+    result = check.check_fix(work, ORIGINAL)
+    assert result.passed is False, result.output
+    assert "test_summary_counts_last_day" in result.output
 
 
 def test_fix_in_periods_fails(tmp_path):

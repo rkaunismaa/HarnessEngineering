@@ -45,7 +45,7 @@ Sort the failures into a few causes before changing anything. The fix for "never
 
 New: `agent/headless.py`, `agent/eval.py`, and `scripts/run_solution.py`. Changed: `agent/__main__.py`. Tests: `lessons/11-capstone/tests/`.
 
-You get a project to work on: `capstone/buggy_project/` (a small library with one failing test) and `capstone/eval/check.py`, which provides `check_fix(workdir: Path, original: Path) -> CheckResult` with fields `passed`, `tests_modified`, `output`.
+You get a project to work on: `capstone/buggy_project/` (a small personal-finance library with one failing test; the cause is a date range whose end is treated as exclusive, and it appears in two functions, so a complete fix changes both) and `capstone/eval/check.py`, which provides `check_fix(workdir: Path, original: Path) -> CheckResult` with fields `passed`, `tests_modified`, `output`.
 
 **`agent/headless.py`**
 - `class SandboxUnavailable(Exception)`.
@@ -112,6 +112,20 @@ Run the same eval against different models and compare rates, mean turns and mea
 - Optionally Flint. It needs more memory than the 4090 alone, so it is only an option if you can run it on a larger machine or split it across memory; point `AGENT_BASE_URL` and `AGENT_MODEL` at wherever it is served.
 
 Use the same `--n`, the same task and a fresh `--workdir-base` for each. Differences smaller than the spread between repeats of one model are noise.
+
+## What we measured on 2026-10-30
+
+The task above, `--n 10`, the reference solution's defaults (`solutions/11-capstone`), on the final version of `capstone/buggy_project`:
+
+| Model | Passed | Mean turns | Mean prompt tokens | Mean seconds |
+|---|---|---|---|---|
+| `qwen/qwen3.8-27b` (LM Studio) | 9 of 10 (90%) | 8.4 | 26210 | 40 |
+| `qwen3:4b-instruct` (Ollama) | 0 of 10 (0%) | 17.8 | 76001 | 26 |
+
+- The visible failing test exercises `monthly_totals`. The same off-by-one is in `month_summary`, which has its own copy of the date filter, and a hidden test checks it. The 27B run that failed fixed `monthly_totals` only, so the visible test went green while the hidden test did not: a fix that matches the test, not the behaviour.
+- A first version of the project shared one private date filter between the two functions. The 27B passed 10 of 10 on it (mean 7.6 turns), which would have measured nothing, so the filter was split in two.
+- The 4B failed all ten runs. Its logs show edits that do not fix the bug (for example rewriting how totals are accumulated), one run that changed `parse.py` instead, and one run (`tests!`) that edited the tests despite the instruction. It used about three times the prompt tokens of the 27B (more than twice the turns) while each run took less time, so requests are faster.
+- Ten runs give a rough rate: 9 of 10 is compatible with a true rate anywhere from about 60% to 99%. Use a larger `--n` before claiming that one prompt beats another by ten points.
 
 ## Break it
 
