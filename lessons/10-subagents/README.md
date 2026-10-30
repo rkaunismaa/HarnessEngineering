@@ -27,7 +27,7 @@ Measured on the 27B (LM Studio), a project of 8 modules with 25 small functions 
 
 The helper gets `read_file`, `list_files` and `search` only: no `edit_file`, `write_file`, `bash`, `todo_write`, or `subagent`.
 
-- **Safety.** Its tool calls run without the permission checks and prompts the parent uses (it is built without a `PermissionPolicy` or approver). That is only acceptable because every tool it has is read-only.
+- **Safety.** The helper has no approver, so nothing it does can wait for a yes or no. That is only workable because every tool it has is read-only: the policy never needs to ask. It still gets the parent's `PermissionPolicy`, so deny rules apply to it. Without that, a path denied to the parent (say `.env`) would be readable by asking the helper, since `subagent` itself is read-only and auto-allowed. Deny rules are the control that holds even with `auto_approve`, so they must cover every agent.
 - **No runaway recursion.** A helper that can start helpers can spend unbounded requests. Without `subagent` in its set the depth is exactly one.
 - **No hidden side effects.** The parent sees only an answer. If the helper had changed a file, nothing in the parent's history would say so.
 - **Focus.** A model with three tools and a short system prompt picks among three tools. Fewer choices is also a small-model reliability feature.
@@ -46,8 +46,8 @@ New: `agent/tools/subagent.py`. Changed: `agent/tools/registry.py`, `agent/tools
 
 **`agent/tools/subagent.py`**:
 - `SUBAGENT_TOOLS = ("read_file", "list_files", "search")`, `SUBAGENT_MAX_TURNS = 20`, `SUBAGENT_MAX_ANSWER = 4000`.
-- `make_subagent_tool(client, model: str, tools: ToolRegistry, *, log: RequestLog | None = None, context_window: int | None = None) -> Tool`. The tool is named `subagent`, takes one required string `task`, and has `read_only=True` (it asks nothing of the user itself; the helper's tools are all read-only).
-- Each call builds a fresh `Agent` with `tools.subset(SUBAGENT_TOOLS)`, `max_turns=SUBAGENT_MAX_TURNS`, and no `permissions`, `approver`, `events`, `stream`, `verify` or `workspace`. With `context_window` given it also gets its own new `ContextManager(context_window)`; otherwise no context manager.
+- `make_subagent_tool(client, model: str, tools: ToolRegistry, *, log: RequestLog | None = None, context_window: int | None = None, permissions: PermissionPolicy | None = None, workspace: Workspace | None = None) -> Tool`. The tool is named `subagent`, takes one required string `task`, and has `read_only=True` (it asks nothing of the user itself; the helper's tools are all read-only).
+- Each call builds a fresh `Agent` with `tools.subset(SUBAGENT_TOOLS)`, `max_turns=SUBAGENT_MAX_TURNS`, `approver=None`, and no `events`, `stream` or `verify`. It gets the `permissions` policy and `workspace` the tool was built with (both optional; with no policy every call runs). Every helper tool is read-only, so the only decision the policy can make is deny: a denied call returns the lesson 5 string `Error: this call is blocked by a deny rule.` With `context_window` given it also gets its own new `ContextManager(context_window)`; otherwise no context manager.
 - Its system prompt is this text exactly:
   > You are a search subagent. You can only read: you have read_file, list_files and search, and you cannot change anything. Find the answer to the task you are given. Answer concisely: name the files and line numbers that matter and quote only the lines needed. Do not paste whole files.
 - Its history is `[system, user(task)]` and nothing else: two messages in its first request. The parent's conversation is not passed.
@@ -61,7 +61,7 @@ New: `agent/tools/subagent.py`. Changed: `agent/tools/registry.py`, `agent/tools
 
 **`make_default_tools(ws, *, confirm_bash=None, client=None, model=None, log=None, context_window=None)`**: registers `subagent` only when both `client` and `model` are given. It is registered last, and the helper's tool set comes from the registry as it is when called.
 
-**CLI**: `_build_agent` creates the client and the request log once and passes `client`, `model`, `log` and `context_window=config.context_window` to `make_default_tools`, so `ask` and `chat` offer `subagent` and the log shows both agents' requests in one file.
+**CLI**: `_build_agent` creates the client and the request log once and passes `client`, `model`, `log`, `context_window=config.context_window` and the same `PermissionPolicy` the parent uses to `make_default_tools`, so `ask` and `chat` offer `subagent` and the log shows both agents' requests in one file.
 
 The tool description is what makes the model use it. Say what it is for (searches that would otherwise fill the history), that it can only read, and that it cannot see the conversation, so the `task` must be complete.
 

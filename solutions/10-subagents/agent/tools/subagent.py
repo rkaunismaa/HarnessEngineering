@@ -2,7 +2,13 @@
 from __future__ import annotations
 
 from ..log import RequestLog
+from ..workspace import Workspace
 from .registry import Tool, ToolRegistry, truncate
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # permissions.py imports this package
+    from ..permissions import PermissionPolicy
 
 SUBAGENT_TOOLS = ("read_file", "list_files", "search")
 SUBAGENT_MAX_TURNS = 20
@@ -16,7 +22,9 @@ SUBAGENT_SYSTEM = (
 
 def make_subagent_tool(client, model: str, tools: ToolRegistry, *,
                        log: RequestLog | None = None,
-                       context_window: int | None = None) -> Tool:
+                       context_window: int | None = None,
+                       permissions: PermissionPolicy | None = None,
+                       workspace: Workspace | None = None) -> Tool:
     from ..context import ContextManager
     from ..loop import Agent  # imported here: loop.py imports this package
 
@@ -27,6 +35,7 @@ def make_subagent_tool(client, model: str, tools: ToolRegistry, *,
         runs += 1
         agent = Agent(client, model, tools.subset(SUBAGENT_TOOLS), system=SUBAGENT_SYSTEM,
                       max_turns=SUBAGENT_MAX_TURNS,
+                      permissions=permissions, workspace=workspace,
                       log=log.with_agent(f"subagent-{runs}") if log else None,
                       context=ContextManager(context_window) if context_window else None)
         result = agent.run(task)

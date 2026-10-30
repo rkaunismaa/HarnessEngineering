@@ -2,6 +2,7 @@ import json
 
 import pytest
 
+from agent.permissions import PermissionPolicy
 from agent.log import RequestLog, read_log
 from agent.loop import Agent
 from agent.tools import make_default_tools
@@ -119,6 +120,22 @@ def test_subagent_error(tmp_path):
     agent.run("go")
     tool_msg = [m for m in agent.messages if m["role"] == "tool"][0]["content"]
     assert tool_msg.startswith("Error: subagent failed: ")
+
+
+def test_subagent_obeys_parent_deny_rules(tmp_path):
+    (tmp_path / ".env").write_text("SECRET=hunter2\n")
+    ws = Workspace(tmp_path)
+    policy = PermissionPolicy(deny=["read_file(.env)"])
+    script = [delegate(), reply(tool_calls=[call("read_file", {"path": ".env"})]),
+              reply(content="could not read it"), reply(content="ok")]
+    client = FakeClient(script)
+    tools = make_default_tools(ws, client=client, model="m", permissions=policy)
+    agent = Agent(client, "m", tools, workspace=ws, permissions=policy)
+    agent.run("go")
+    helper_tool_msg = client.requests[2]["messages"][-1]
+    assert helper_tool_msg["role"] == "tool"
+    assert helper_tool_msg["content"] == "Error: this call is blocked by a deny rule."
+    assert "hunter2" not in json.dumps(agent.messages)
 
 
 def test_subagent_empty_task_is_a_schema_error(tmp_path):

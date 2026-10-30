@@ -73,13 +73,14 @@ def _build_agent(args, **agent_kwargs) -> Agent | None:
     ws = Workspace(Path(args.root), sandbox=SandboxConfig() if use_sandbox else None)
     client = make_client(config)
     log = RequestLog.for_session(config.log_dir)
+    permissions = PermissionPolicy(allow=args.allow)
     tools = make_default_tools(ws, client=client, model=config.model, log=log,
-                               context_window=config.context_window)
+                               context_window=config.context_window, permissions=permissions)
     if getattr(args, "verify", None):
         agent_kwargs["verify"] = _make_verify(ws, args.verify)
     return Agent(client, config.model, tools,
                  system=build_system_prompt(ws, tools), log=log,
-                 permissions=PermissionPolicy(allow=args.allow), approver=_approve,
+                 permissions=permissions, approver=_approve,
                  workspace=ws, context=ContextManager(config.context_window),
                  **agent_kwargs)
 
