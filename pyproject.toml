@@ -1,0 +1,22 @@
+[project]
+name = "harnessengineering"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "openai>=2.0,<3",
+    "rich",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+]
+
+[tool.pytest.ini_options]
+addopts = "--import-mode=importlib"
+testpaths = ["lessons", "testing", "capstone/eval"]
+pythonpath = ["."]
+markers = [
+    "live: needs a running model server; run with --live",
+    "sandbox: needs a usable bubblewrap (bwrap); skipped otherwise",
+]
