@@ -13,7 +13,7 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-addopts = "--import-mode=importlib"
+addopts = "--import-mode=importlib --ignore=capstone/eval/hidden_tests"
 testpaths = ["lessons", "testing", "capstone/eval"]
 pythonpath = ["."]
 markers = [
