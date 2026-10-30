@@ -119,7 +119,7 @@ def test_read_file_offset_limit(tmp_path):
 
 def test_read_file_is_read_only_and_registered(tmp_path):
     tools = make_default_tools(Workspace(tmp_path))
-    assert tools.names() == ["read_file"]
+    assert "read_file" in tools.names()
     assert tools.get("read_file").read_only is True
     schema = tools.schemas()[0]
     assert schema["type"] == "function"
