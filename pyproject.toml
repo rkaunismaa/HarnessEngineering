@@ -3,7 +3,7 @@ name = "harnessengineering"
 version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [
-    "openai>=2.0,<3",
+    "openai>=3,<4",
     "rich",
 ]
 

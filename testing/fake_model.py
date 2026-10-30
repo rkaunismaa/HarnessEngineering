@@ -10,7 +10,7 @@ import json
 import re
 import time
 
-import httpx
+import httpx2
 import openai
 from openai.types import CompletionUsage
 from openai.types.chat import ChatCompletion, ChatCompletionChunk, ChatCompletionMessage
@@ -119,13 +119,13 @@ def to_chunks(completion: ChatCompletion, text_chunk_size: int = 5) -> list[Chat
 
 
 def bad_request(message: str) -> openai.BadRequestError:
-    request = httpx.Request("POST", _URL)
-    response = httpx.Response(400, request=request, json={"error": {"message": message}})
+    request = httpx2.Request("POST", _URL)
+    response = httpx2.Response(400, request=request, json={"error": {"message": message}})
     return openai.BadRequestError(message, response=response, body={"message": message})
 
 
 def connection_error() -> openai.APIConnectionError:
-    return openai.APIConnectionError(request=httpx.Request("POST", _URL))
+    return openai.APIConnectionError(request=httpx2.Request("POST", _URL))
 
 
 def _renumber(script: list) -> None:
