@@ -82,7 +82,7 @@ uv run python -m agent ask --root ../some-project "Use the subagent tool to find
 uv run python -m agent log
 ```
 
-In the log, the lines tagged `[main]` are the parent and `[subagent-1]` the helper. Compare the `prompt=` numbers: the parent's stay small. Run it again without mentioning the subagent and see whether the model delegates by itself (in the runs above it searched directly).
+In the log, the lines tagged `[main]` are the parent and `[subagent-1]` the helper. Compare the `prompt=` numbers: the parent's stay small. Run it again without mentioning the subagent and see whether the model delegates by itself.
 
 ## Break it
 
