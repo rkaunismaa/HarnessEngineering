@@ -62,7 +62,7 @@ On success the file is re-marked as read, so a second edit does not need another
 - Exists and was read: overwrite, return `f"Wrote {path}."`.
 - Either way the file counts as read afterwards.
 
-Both tools write exactly the bytes they are given, UTF-8 encoded. Do not let Python translate line endings: a file with `\r\n` line endings must keep them on lines you did not touch, and a file with no trailing newline must still have none. (When a CRLF file contains the model's multi-line `old_string` written with `\n`, the match will fail as is. Trying again with `\n` turned into `\r\n` is a good small extra, and not tested.)
+Both tools write exactly the bytes they are given, UTF-8 encoded. Do not let Python translate line endings: a file with `\r\n` line endings must keep them on lines you did not touch, and a file with no trailing newline must still have none. The model writes line breaks as `\n`, so in a file that uses `\r\n`, `edit_file` must never insert a bare `\n`: turn every `\n` in `new_string` into `\r\n`. If `old_string` is not found as given, try again with its `\n` turned into `\r\n` too, so a multi-line match works. The tests check both: `two` replaced by `two\nthree` in `one\r\ntwo\r\n` gives `one\r\ntwo\r\nthree\r\n`.
 
 **`agent/tools/__init__.py`**: register `edit_file` and `write_file` in `make_default_tools`.
 
@@ -104,6 +104,5 @@ Small models vary between runs, so yours may differ; the exercise is to read wha
 
 - Show the model a diff in the success message (a few lines around the change) so it can confirm without a re-read.
 - When `old_string` is not found, suggest the closest line in the file.
-- Normalise `\n` in the model's strings for CRLF files (see above).
 - Write to a temporary file and rename it over the target, so a crash cannot leave a half-written file.
 - A `replace_lines` tool by line number, and why line numbers are fragile after the first edit.

@@ -169,6 +169,26 @@ def test_edit_preserves_trailing_newline_and_crlf(tmp_path):
     assert nonl.read_bytes() == b"one\n2"
 
 
+def test_crlf_edit_never_inserts_bare_newline(tmp_path):
+    crlf = tmp_path / "crlf.txt"
+    crlf.write_bytes(b"one\r\ntwo\r\n")
+    registry = tools_for(tmp_path)
+    run(registry, "read_file", path="crlf.txt")
+    # old_string matches directly; new_string's "\n" must still become "\r\n"
+    assert edit(registry, "crlf.txt", "two", "two\nthree") == "Edited crlf.txt (1 replacement)."
+    assert crlf.read_bytes() == b"one\r\ntwo\r\nthree\r\n"
+
+
+def test_crlf_multiline_edit(tmp_path):
+    crlf = tmp_path / "crlf.txt"
+    crlf.write_bytes(b"a\r\nb\r\nc\r\nd\r\n")
+    registry = tools_for(tmp_path)
+    run(registry, "read_file", path="crlf.txt")
+    # the model writes both strings with "\n"
+    assert edit(registry, "crlf.txt", "b\nc\n", "B\nC\nC2\n") == "Edited crlf.txt (1 replacement)."
+    assert crlf.read_bytes() == b"a\r\nB\r\nC\r\nC2\r\nd\r\n"
+
+
 def test_read_file_output_unchanged(tmp_path):
     (tmp_path / "a.txt").write_text("a\nb\n")
     assert run(tools_for(tmp_path), "read_file", path="a.txt") == "     1\ta\n     2\tb"

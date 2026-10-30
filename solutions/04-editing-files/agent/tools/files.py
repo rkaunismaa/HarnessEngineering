@@ -162,9 +162,10 @@ def make_edit_file(ws: Workspace) -> Tool:
             text = _read_exact(p)
         except UnicodeDecodeError:
             return f"Error: {path} is not a UTF-8 text file."
-        if old_string not in text and "\r\n" in text:
-            # the model sees "\n"; a CRLF file needs the same edit spelled with "\r\n"
-            old_string = old_string.replace("\r\n", "\n").replace("\n", "\r\n")
+        if "\r\n" in text:
+            # the model writes "\n"; in a CRLF file every inserted line break must be "\r\n"
+            if old_string not in text:
+                old_string = old_string.replace("\r\n", "\n").replace("\n", "\r\n")
             new_string = new_string.replace("\r\n", "\n").replace("\n", "\r\n")
         count = text.count(old_string) if old_string else 0
         if count == 0:
