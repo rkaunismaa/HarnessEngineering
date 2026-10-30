@@ -88,7 +88,7 @@ uv run python -m agent log
 
 What the reference solution did: `read_file` first (1138 prompt tokens on that request), then a single `edit_file` call with `old_string: "total"`, `new_string: "add_up"` and `replace_all: true`, answered with `Edited calc.py (3 replacements).` Then it read the file again to check, and tried `bash` to run it. (If `bash` asks for confirmation on your terminal, answer it; it waits for you.)
 
-Now try the guard rails yourself: edit a different file's text, then change the file in another terminal between the model's read and its edit, and look in the log for the `changed on disk` result and what the model did next.
+Now try the guard rails yourself: ask for an edit, then change the file in another terminal between the model's read and its edit, and look in the log for the `changed on disk` result and what the model did next.
 
 ## Break it
 
