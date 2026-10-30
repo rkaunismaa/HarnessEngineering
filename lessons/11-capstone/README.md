@@ -8,7 +8,7 @@ You have an agent. Does it work? So far you have answered that by running it onc
 
 This lesson adds two things.
 
-1. **A headless mode.** `python -m agent run "<task>"` runs one task with nobody at the keyboard. Nothing can ask a question, so every tool call is allowed and the only safety is the sandbox from lesson 5. That is why the command refuses to start when the sandbox is unavailable.
+1. **A headless mode.** `python -m agent run "<task>" --root DIR` runs one task with nobody at the keyboard. Nothing can ask a question, so every tool call is allowed and the only safety is the sandbox from lesson 5. That is why the command refuses to start when the sandbox is unavailable, and why it works on a fresh copy of `DIR` rather than on `DIR` itself.
 2. **An eval.** `python -m agent eval` runs the same task `n` times, each on a fresh copy of a project, and then checks each copy with a script the agent cannot see. The result is a rate, plus the turns, tokens and seconds each run cost.
 
 ### Measuring versus eyeballing
@@ -38,14 +38,14 @@ Sort the failures into a few causes before changing anything. The fix for "never
 
 ## How Claude Code does it
 
-- **Documented** ([Run Claude Code programmatically](https://code.claude.com/docs/en/headless), checked): passing `-p` (or `--print`) runs Claude Code non-interactively: `claude -p "Find and fix the bug in auth.py" --allowedTools "Read,Edit,Bash"`. `--allowedTools` lets named tools run without a prompt, `--output-format` chooses `text`, `json` or `stream-json`, and the process exits with code 0 on success and non-zero when the run fails. In a manual-mode run, a call that needs approval is denied unless something approves it. Your `run` command makes the opposite choice for approvals (everything allowed) and relies on the sandbox instead.
+- **Documented** ([Run Claude Code programmatically](https://code.claude.com/docs/en/headless), checked): passing `-p` (or `--print`) runs Claude Code non-interactively: `claude -p "Find and fix the bug in auth.py" --allowedTools "Read,Edit,Bash"`. `--allowedTools` lets named tools run without a prompt, `--output-format` chooses `text`, `json` or `stream-json`, and the process exits with code 0 on success and non-zero when the run fails. In a manual-mode run, a call that needs approval is denied unless something approves it. Your `run` command makes the opposite choice for approvals (everything allowed) and relies on the sandbox and a copy of the project instead.
 - **Design note**: the eval loop is not a Claude Code feature. It is a pattern you build around any agent that can run headless: copy a project, run the task, check the result with something the agent cannot edit, repeat, count. You could point the same loop at `claude -p` by swapping what `run_task` does.
 
 ## What you'll build
 
-New: `agent/headless.py`, `agent/eval.py`, and `scripts/run_solution.py`. Changed: `agent/__main__.py`. Tests: `lessons/11-capstone/tests/`.
+New: `agent/headless.py` and `agent/eval.py`. Changed: `agent/__main__.py`. Tests: `lessons/11-capstone/tests/`. Provided (already in the repository, nothing to build): `scripts/run_solution.py`.
 
-You get a project to work on: `capstone/buggy_project/` (a small personal-finance library with one failing test; the cause is a date range whose end is treated as exclusive, and it appears in two functions, so a complete fix changes both) and `capstone/eval/check.py`, which provides `check_fix(workdir: Path, original: Path) -> CheckResult` with fields `passed`, `tests_modified`, `output`.
+You get a project to work on: `capstone/buggy_project/` (a small personal-finance library with one failing test; the cause is a date range whose end is treated as exclusive, and it appears in two functions, so a complete fix changes both) and `capstone/eval/check.py`, which provides `check_fix(workdir: Path, original: Path) -> CheckResult` with fields `passed`, `tests_modified`, `output`. The checker runs code the agent wrote, so it runs each pytest inside bubblewrap with the same sandbox shape as lesson 5 (read-only filesystem, only `workdir` writable, no network), and raises `RuntimeError` instead of running unsandboxed when bubblewrap is not usable. The hidden tests are readable from inside that sandbox (`/` is bound read-only) but not writable; what keeps the score honest is the hash of `tests/` and the separate run of the hidden tests, not secrecy.
 
 **`agent/headless.py`**
 - `class SandboxUnavailable(Exception)`.
@@ -54,6 +54,7 @@ You get a project to work on: `capstone/buggy_project/` (a small personal-financ
 - `run_task(task: str, root: Path, config: Config, *, client=None, require_sandbox: bool = True, verify_command: str | None = None, max_turns: int = 50, log: RequestLog | None = None) -> RunReport`:
   - Raises `SandboxUnavailable` when `require_sandbox` is true and `sandbox_available()` is false. Look the function up through the module (`sandbox_available()` called from `headless.py`), because the test replaces it there.
   - Builds `Workspace(root, sandbox=SandboxConfig(enabled=require_sandbox))`, a client from `config` unless `client` is given, and a session log from `config.log_dir` unless `log` is given.
+  - Works in `root` itself (the eval and the CLI give it a copy).
   - Uses `PermissionPolicy(auto_approve=True)` for the agent and for `make_default_tools` (so the subagent gets it too), no approver, `stream=False`, `ContextManager(config.context_window)`, and the full system prompt.
   - With `verify_command`, the agent's `verify` runs it through the same `run_shell` the `bash` tool uses (timeout 300) and returns `(exit code == 0, output)`. A timeout counts as failure. `report.verified` is the agent's `verified` value, so it is `None` when no command was given.
 
@@ -68,31 +69,31 @@ You get a project to work on: `capstone/buggy_project/` (a small personal-financ
   - Call `run_task` through the module (`run_task(...)` in `eval.py`); the tests replace it there to avoid needing bubblewrap.
 
 **CLI** (`agent/__main__.py`)
-- `python -m agent run "<task>" [--root DIR] [--verify COMMAND] [--max-turns N] [--unsafe-no-sandbox]`. Defaults: root `.`, verify `DEFAULT_VERIFY_COMMAND`. Without a usable sandbox it prints a message that names `--unsafe-no-sandbox` to stderr and exits 1. With the flag it prints a warning and runs without one. It prints the final text, then a one-line summary (stop reason, turns, tokens, seconds, verified, log path) to stderr, and exits 0 only when the stop reason is `done`.
+- `python -m agent run "<task>" --root DIR [--verify COMMAND] [--max-turns N] [--unsafe-no-sandbox]`. `--root` is required. Every tool call is allowed, so the command never edits `DIR`: it copies it into a new `tempfile.mkdtemp(prefix="harness-run-")` (skipping `__pycache__`, `.pytest_cache` and `.git`), runs `run_task` on the copy, and prints the copy's path to stderr at the start and at the end so you can inspect it or `diff -r` it against the original. Verify defaults to `DEFAULT_VERIFY_COMMAND`. Without a usable sandbox it prints a message that names `--unsafe-no-sandbox` to stderr and exits 1. With the flag it prints a warning and runs without one. It prints the final text, then a one-line summary (stop reason, turns, tokens, seconds, verified, log path) to stderr, and exits 0 only when the stop reason is `done`.
 - `python -m agent eval [--project DIR] [--checker PATH] [--n N] [--task TEXT] [--verify COMMAND] [--workdir-base DIR]`. Defaults: project `capstone/buggy_project`, checker `capstone/eval/check.py`, `--n 10`, and this task:
   > The test suite has a failing test. Find the cause and fix it in the source code. Do not modify the tests.
 
-  The checker file is loaded with `importlib.util.spec_from_file_location` and its `check_fix` is used. The working copies go in `--workdir-base`, or in a new `tempfile.mkdtemp(prefix="harness-eval-")` which is printed. Never put them inside the repository, and not under `/run` (the sandbox hides it). It exits 1 with a message if bubblewrap is unusable. It prints one row per run (run, result, turns, tokens, seconds, log path), then the summary: runs passed out of runs, mean turns, mean prompt tokens, mean seconds. The result column shows `pass`, `fail`, or `tests!` when the agent changed the tests.
+  The checker file is loaded with `importlib.util.spec_from_file_location` and its `check_fix` is used. The working copies go in `--workdir-base`, or in a new `tempfile.mkdtemp(prefix="harness-eval-")` which is printed. Never put them inside the repository, and not under `/run` (the sandbox hides it). If `--workdir-base` already contains a `run-NN` folder this eval would use, it exits 1 with a message saying so instead of failing partway. It exits 1 with a message if bubblewrap is unusable. It prints one row per run (run, result, turns, tokens, seconds, log path), then the summary: runs passed out of runs, mean turns, mean prompt tokens, mean seconds. The result column shows `pass`, `fail`, or `tests!` when the agent changed the tests.
 
 **`scripts/run_solution.py <solution-dir> <agent args...>`**: puts `<solution-dir>` first on `sys.path`, imports `agent.__main__`, calls its `main(argv)` and exits with the code it returns. Running `python -m agent` from the repository root imports your `agent/` package; this script runs the reference solution instead, without copying it over your code.
 
 ## Tests
 
 ```
-uv run pytest lessons/11-capstone --impl agent-or-solution-dir
+uv run pytest lessons/11-capstone                   # against your agent/
+uv run pytest lessons/11-capstone --impl solutions/11-capstone
 ```
 
-For the reference solution: `uv run pytest lessons/11-capstone --impl solutions/11-capstone`. Most tests use the scripted client and never touch the network. `test_verify_runs_in_sandbox` needs bubblewrap and is skipped without it. `test_live_capstone_once` needs `--live`: it runs the real model once on a copy of the buggy project and only asserts that the run finishes and the checker returns a result, since whether the agent succeeds is exactly what the eval measures.
+Most tests use the scripted client and never touch the network. `test_verify_runs_in_sandbox` needs bubblewrap and is skipped without it. `test_live_capstone_once` needs `--live`: it runs the real model once on a copy of the buggy project and only asserts that the run finishes and the checker returns a result, since whether the agent succeeds is exactly what the eval measures.
 
 ## Try it live
 
-One run, headless, on a copy so the original stays as it is:
+One run, headless. `run` works on a copy, so `capstone/buggy_project` stays as it is; the copy's path is printed at the start and the end:
 
 ```
-cp -r capstone/buggy_project /tmp/try-one
 uv run python scripts/run_solution.py solutions/11-capstone run \
   "The test suite has a failing test. Find the cause and fix it in the source code. Do not modify the tests." \
-  --root /tmp/try-one
+  --root capstone/buggy_project
 ```
 
 Then a small eval:

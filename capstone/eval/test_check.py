@@ -2,6 +2,8 @@ import importlib.util
 import shutil
 from pathlib import Path
 
+import pytest
+
 HERE = Path(__file__).resolve().parent
 ORIGINAL = HERE.parent / "buggy_project"
 
@@ -22,6 +24,7 @@ def _replace(path, old, new):
     path.write_text(text.replace(old, new))
 
 
+@pytest.mark.sandbox
 def test_unfixed_fails(tmp_path):
     result = check.check_fix(_copy(tmp_path), ORIGINAL)
     assert result.passed is False
@@ -29,6 +32,7 @@ def test_unfixed_fails(tmp_path):
     assert "test_includes_last_day_of_month" in result.output
 
 
+@pytest.mark.sandbox
 def test_fix_in_report_passes(tmp_path):
     work = _copy(tmp_path)
     path = work / "ledger" / "report.py"
@@ -39,6 +43,7 @@ def test_fix_in_report_passes(tmp_path):
     assert result.tests_modified is False
 
 
+@pytest.mark.sandbox
 def test_fixing_only_monthly_totals_fails(tmp_path):
     work = _copy(tmp_path)
     path = work / "ledger" / "report.py"
@@ -48,6 +53,7 @@ def test_fixing_only_monthly_totals_fails(tmp_path):
     assert "test_summary_counts_last_day" in result.output
 
 
+@pytest.mark.sandbox
 def test_fix_in_periods_fails(tmp_path):
     work = _copy(tmp_path)
     _replace(work / "ledger" / "periods.py", "return start, end", "return start, end + timedelta(days=1)")
@@ -57,6 +63,7 @@ def test_fix_in_periods_fails(tmp_path):
     assert result.tests_modified is False
 
 
+@pytest.mark.sandbox
 def test_deleting_failing_test_detected(tmp_path):
     work = _copy(tmp_path)
     path = work / "tests" / "test_report.py"
@@ -69,7 +76,36 @@ def test_deleting_failing_test_detected(tmp_path):
     assert result.passed is False
 
 
+@pytest.mark.sandbox
 def test_added_test_file_detected(tmp_path):
     work = _copy(tmp_path)
     (work / "tests" / "test_extra.py").write_text("def test_x():\n    pass\n")
     assert check.check_fix(work, ORIGINAL).tests_modified is True
+
+
+@pytest.mark.sandbox
+def test_agent_code_cannot_write_outside_workdir(tmp_path):
+    work = _copy(tmp_path)
+    outside = tmp_path / "escaped.txt"
+    home_probe = ORIGINAL.parent / "escaped-from-check.txt"
+    init = work / "ledger" / "__init__.py"
+    init.write_text(init.read_text() + (
+        "\nfor _p in (%r, %r):\n"
+        "    try:\n"
+        "        open(_p, 'w').write('escaped')\n"
+        "    except OSError:\n"
+        "        pass\n" % (str(outside), str(home_probe))))
+    try:
+        result = check.check_fix(work, ORIGINAL)
+        assert not outside.exists()
+        assert not home_probe.exists()
+        assert result.passed is False  # still the unfixed project: checking completed
+        assert "test_includes_last_day_of_month" in result.output
+    finally:
+        home_probe.unlink(missing_ok=True)
+
+
+def test_refuses_to_run_unsandboxed(tmp_path, monkeypatch):
+    monkeypatch.setattr(check, "_bwrap_usable", lambda: False)
+    with pytest.raises(RuntimeError, match="bubblewrap"):
+        check.check_fix(_copy(tmp_path), ORIGINAL)

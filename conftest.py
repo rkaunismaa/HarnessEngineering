@@ -24,12 +24,21 @@ def pytest_configure(config):
     sys.path.insert(0, impl)
 
 
+# The same kind of sandbox the agent builds (lesson 5) and the capstone checker uses. Inlined:
+# this file runs before --impl picks which `agent` package to import. Some hosts allow a
+# plain `bwrap --ro-bind / / true` but refuse --unshare-all, so probe with the real flags.
+_PROBE = ["bwrap", "--unshare-all", "--die-with-parent", "--new-session",
+          "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc",
+          "--tmpfs", "/tmp", "--tmpfs", "/run", "--bind", "/tmp", "/tmp",
+          "--unsetenv", "DBUS_SESSION_BUS_ADDRESS", "--unsetenv", "SSH_AUTH_SOCK",
+          "--unsetenv", "XDG_RUNTIME_DIR", "--chdir", "/", "--", "bash", "-c", "true"]
+
+
 def _bwrap_usable() -> bool:
     if not shutil.which("bwrap"):
         return False
     try:
-        return subprocess.run(["bwrap", "--ro-bind", "/", "/", "true"],
-                              capture_output=True, timeout=10).returncode == 0
+        return subprocess.run(_PROBE, capture_output=True, timeout=10).returncode == 0
     except (OSError, subprocess.TimeoutExpired):
         return False
 

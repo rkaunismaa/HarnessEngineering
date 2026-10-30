@@ -1,4 +1,5 @@
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -107,5 +108,35 @@ def test_cli_has_run_and_eval_options():
     assert args.n == 3 and args.project == "capstone/buggy_project"
     assert args.checker == "capstone/eval/check.py"
     assert "failing test" in args.task
-    args = cli.build_parser().parse_args(["run", "t", "--unsafe-no-sandbox"])
+    args = cli.build_parser().parse_args(["run", "t", "--root", "p", "--unsafe-no-sandbox"])
     assert args.unsafe_no_sandbox is True
+    with pytest.raises(SystemExit):  # run has no default root: you say which project
+        cli.build_parser().parse_args(["run", "t"])
+
+
+def test_cli_run_works_on_a_copy(tmp_path, monkeypatch, capsys):
+    import tempfile
+
+    import agent.__main__ as cli
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path / "tmp"))
+    (tmp_path / "tmp").mkdir()
+    root = tmp_path / "proj"
+    (root / "__pycache__").mkdir(parents=True)
+    (root / "__pycache__" / "x.pyc").write_bytes(b"junk")
+    (root / "lib.py").write_text("X = 1\n")
+    seen = []
+
+    def fake_run_task(task, where, config, **kw):
+        seen.append(Path(where))
+        (Path(where) / "lib.py").write_text("X = 2\n")
+        return RunReport("done", "ok", 1, 1, 1, 0.0, None, None)
+
+    monkeypatch.setattr(cli, "run_task", fake_run_task)
+    assert cli.main(["run", "fix", "--root", str(root), "--unsafe-no-sandbox"]) == 0
+    copy = seen[0]
+    assert copy != root and copy.name.startswith("harness-run-")
+    assert (root / "lib.py").read_text() == "X = 1\n"  # the original is untouched
+    assert (copy / "lib.py").read_text() == "X = 2\n"  # the edit landed in the copy
+    assert not (copy / "__pycache__").exists()
+    out = capsys.readouterr()
+    assert (out.out + out.err).count(str(copy)) >= 2  # printed at the start and the end

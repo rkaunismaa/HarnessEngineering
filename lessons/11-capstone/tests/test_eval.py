@@ -96,6 +96,18 @@ def test_each_run_gets_its_own_log(tmp_path, project):
     assert len(set(paths)) == 3 and all(p.is_file() for p in paths)
 
 
+def test_cli_eval_refuses_existing_run_dirs(tmp_path, project, capsys):
+    import agent.__main__ as cli
+    base = tmp_path / "work"
+    (base / "run-00").mkdir(parents=True)
+    code = cli.main(["eval", "--n", "1", "--project", str(project),
+                     "--checker", str(ROOT / "capstone/eval/check.py"),
+                     "--workdir-base", str(base)])
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "run-00" in err and "--workdir-base" in err
+
+
 def test_empty_report():
     r = EvalReport(runs=[])
     assert r.success_rate == 0.0

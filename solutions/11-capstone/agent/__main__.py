@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -129,11 +130,22 @@ def _run(args) -> int:
     if args.unsafe_no_sandbox:
         print("Warning: --unsafe-no-sandbox: bash commands run directly on this machine, "
               "with every tool call allowed.", file=sys.stderr)
+    root = Path(args.root)
+    if not root.is_dir():
+        print(f"No such directory: {root}", file=sys.stderr)
+        return 1
+    # Every tool call is allowed, so work on a copy: the original stays as it was, and you
+    # can diff the copy against it afterwards.
+    copy = Path(tempfile.mkdtemp(prefix="harness-run-"))
+    shutil.copytree(root, copy, dirs_exist_ok=True,
+                    ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache", ".git"))
+    print(f"Working on a copy of {root}: {copy}", file=sys.stderr)
     try:
-        report = run_task(args.task, Path(args.root), config,
+        report = run_task(args.task, copy, config,
                           require_sandbox=not args.unsafe_no_sandbox,
                           verify_command=args.verify, max_turns=args.max_turns)
     except SandboxUnavailable as e:
+        shutil.rmtree(copy, ignore_errors=True)
         print(f"{e}\nRefusing to run without a sandbox. Pass --unsafe-no-sandbox to run "
               f"anyway.", file=sys.stderr)
         return 1
@@ -141,6 +153,7 @@ def _run(args) -> int:
     print(f"[{report.stop_reason}] turns={report.turns} prompt_tokens={report.prompt_tokens} "
           f"completion_tokens={report.completion_tokens} seconds={report.duration_s:.0f} "
           f"verified={report.verified} log={report.log_path}", file=sys.stderr)
+    print(f"The result is in {copy} (compare: diff -r {root} {copy})", file=sys.stderr)
     return 0 if report.stop_reason == "done" else 1
 
 
@@ -157,6 +170,14 @@ def _eval(args) -> int:
     for what, p in (("project", project), ("checker", checker_path)):
         if not p.exists():
             print(f"No such {what}: {p}", file=sys.stderr)
+            return 1
+    if args.workdir_base:
+        taken = [f"run-{i:02d}" for i in range(args.n)
+                 if (Path(args.workdir_base) / f"run-{i:02d}").exists()]
+        if taken:
+            print(f"{args.workdir_base} already has {', '.join(taken)} from an earlier eval. "
+                  f"Give a new --workdir-base, or leave it out to use a fresh temp dir.",
+                  file=sys.stderr)
             return 1
     if not sandbox_available():
         print("The eval needs bubblewrap (bwrap) so that runs cannot touch each other or your "
@@ -217,7 +238,8 @@ def build_parser() -> argparse.ArgumentParser:
     log.set_defaults(func=_log)
     run = sub.add_parser("run", help="run one task without asking questions (sandboxed)")
     run.add_argument("task")
-    run.add_argument("--root", default=".", help="directory the agent works in")
+    run.add_argument("--root", required=True,
+                     help="project to work on; the agent edits a copy in a new temp dir")
     run.add_argument("--verify", metavar="COMMAND", default=DEFAULT_VERIFY_COMMAND,
                      help="check to run when the model says it is done (default: pytest -q)")
     run.add_argument("--max-turns", type=int, default=50)

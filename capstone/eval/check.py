@@ -2,9 +2,14 @@
 
 check_fix(workdir, original) runs the project's visible tests and the hidden
 tests against `workdir`, and reports whether the tests directory was altered.
+
+The agent's code is untrusted, so every pytest run happens inside bubblewrap: the
+filesystem is read-only except `workdir`, with no network and a private /tmp and /run.
+If bubblewrap is not usable, check_fix refuses rather than running the code unsandboxed.
 """
 import hashlib
 import os
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -32,6 +37,31 @@ def _hash_tests(root: Path) -> dict:
     return hashes
 
 
+_HOST_SOCKET_VARS = ("DBUS_SESSION_BUS_ADDRESS", "SSH_AUTH_SOCK", "XDG_RUNTIME_DIR")
+
+
+def _bwrap_argv(workdir: Path, cmd: "list[str]") -> "list[str]":
+    """Same shape as the agent's sandbox (lesson 5). The private /tmp comes before the
+    workdir bind, so a workdir under /tmp stays visible; the hidden tests are readable
+    through the read-only bind of /."""
+    argv = ["bwrap", "--unshare-all", "--die-with-parent", "--new-session",
+            "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc",
+            "--tmpfs", "/tmp", "--tmpfs", "/run", "--bind", str(workdir), str(workdir)]
+    for var in _HOST_SOCKET_VARS:
+        argv += ["--unsetenv", var]
+    return argv + ["--chdir", str(workdir), "--"] + cmd
+
+
+def _bwrap_usable() -> bool:
+    if shutil.which("bwrap") is None:
+        return False
+    try:
+        probe = _bwrap_argv(Path("/tmp"), ["true"])
+        return subprocess.run(probe, capture_output=True, timeout=10).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
 def _pytest(workdir: Path, target: Path, timeout: int = 120) -> "tuple[bool, str]":
     env = dict(os.environ)
     env["PYTHONPATH"] = str(workdir)
@@ -44,7 +74,7 @@ def _pytest(workdir: Path, target: Path, timeout: int = 120) -> "tuple[bool, str
     ]
     try:
         proc = subprocess.run(
-            cmd, cwd=workdir, env=env, capture_output=True, text=True, timeout=timeout
+            _bwrap_argv(workdir, cmd), cwd=workdir, env=env, capture_output=True, text=True, timeout=timeout
         )
     except subprocess.TimeoutExpired:
         return False, f"[pytest timed out after {timeout}s]"
@@ -53,6 +83,9 @@ def _pytest(workdir: Path, target: Path, timeout: int = 120) -> "tuple[bool, str
 
 def check_fix(workdir: Path, original: Path) -> CheckResult:
     workdir, original = Path(workdir).resolve(), Path(original).resolve()
+    if not _bwrap_usable():
+        raise RuntimeError("check_fix runs the agent's code inside bubblewrap (bwrap), which "
+                           "is not usable here; refusing to run it unsandboxed.")
     tests_modified = _hash_tests(workdir) != _hash_tests(original)
     visible_ok, visible_out = _pytest(workdir, workdir / "tests")
     hidden_ok, hidden_out = _pytest(workdir, HIDDEN_TESTS)
