@@ -21,7 +21,7 @@
 - Every "How Claude Code does it" claim is labeled **Documented** (with a link to the current page under `https://code.claude.com/docs/`, fetched and checked during the task), **Observed**, or **Design note**. When unsure, use the weaker label.
 - Refer to the learner as "you" in lesson text. No name, no gendered pronouns.
 - Every reference solution passes its own lesson's tests and every earlier lesson's tests (checked by `scripts/check_solutions.py`).
-- Commit messages end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Work on the current branch (`master`, a brand-new repo). Do not push; the user decides about pushing.
+- Commit messages end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Work on `main` (pushed to `origin`, git@github.com:rkaunismaa/HarnessEngineering.git). Do not push; the user decides about pushing.
 
 ## Review Focus
 
