@@ -23,15 +23,13 @@ def error_text(exc) -> str:
     body; LM Studio's is just ``Error code: 400``, with the wording only in the parsed ``body``
     and the raw response text."""
     text = str(exc)
-    extras = [str(getattr(exc, "body", "") or "")]
-    try:
-        extras.append(exc.response.text)
-    except Exception:
-        pass
-    for extra in extras:
-        if extra and extra not in text:
-            text = f"{text} {extra}"
-    return text
+    extra = str(getattr(exc, "body", "") or "")
+    if not extra:  # the body and the response text say the same thing; one is enough
+        try:
+            extra = exc.response.text
+        except Exception:
+            pass
+    return text if not extra or extra in text else f"{text} {extra}"
 
 
 def is_context_overflow(exc) -> bool:
