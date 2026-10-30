@@ -11,6 +11,7 @@ from .log import RequestLog
 from .messages import Usage, message_to_dict
 from .permissions import Approver, Decision, PermissionPolicy
 from .tools.registry import ToolRegistry, validate_args
+from .workspace import Workspace
 
 
 LOOP_THRESHOLD = 3
@@ -33,12 +34,14 @@ class TurnResult:
 class Agent:
     def __init__(self, client, model: str, tools: ToolRegistry, *,
                  system: str | None = None, log: RequestLog | None = None, max_turns: int = 50,
-                 permissions: PermissionPolicy | None = None, approver: Approver | None = None):
+                 permissions: PermissionPolicy | None = None, approver: Approver | None = None,
+                 workspace: Workspace | None = None):
         self.client = client
         self.model = model
         self.tools = tools
         self.permissions = permissions  # None: every call runs (no permission checks)
         self.approver = approver
+        self.workspace = workspace  # lets path rules match the normalized path
         self.log = log
         self.max_turns = max_turns
         self._last_call: tuple[str, str] | None = None
@@ -107,7 +110,7 @@ class Agent:
             return None
         if not isinstance(args, dict) or validate_args(tool.parameters, args):
             return None
-        decision = self.permissions.check(tool, args)
+        decision = self.permissions.check(tool, args, self.workspace)
         if decision == Decision.ALLOW:
             return None
         if decision == Decision.DENY:

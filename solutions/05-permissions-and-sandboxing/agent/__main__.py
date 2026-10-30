@@ -57,7 +57,8 @@ def _ask(args) -> int:
     ws = Workspace(Path(args.root), sandbox=SandboxConfig() if use_sandbox else None)
     agent = Agent(make_client(config), config.model, make_default_tools(ws),
                   log=RequestLog.for_session(config.log_dir),
-                  permissions=PermissionPolicy(allow=args.allow), approver=_approve)
+                  permissions=PermissionPolicy(allow=args.allow), approver=_approve,
+                  workspace=ws)
     result = agent.run(args.prompt)
     if result.stop_reason == "error":
         print(result.error, file=sys.stderr)

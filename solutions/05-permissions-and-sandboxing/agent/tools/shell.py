@@ -32,6 +32,7 @@ def run_shell(ws: Workspace, command: str, timeout: int) -> tuple[int | None, st
         while True:
             data = proc.stdout.read1(65536)
             if not data:
+                proc.stdout.close()
                 return
             if kept < MAX_CAPTURE:
                 chunks.append(data[:MAX_CAPTURE - kept])
@@ -43,13 +44,18 @@ def run_shell(ws: Workspace, command: str, timeout: int) -> tuple[int | None, st
         code: int | None = proc.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
         code = None
-        try:
-            os.killpg(proc.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        proc.wait()
+    # Kill whatever is left in the command's process group: everything on timeout, and
+    # background jobs (`cmd &`) after a normal exit. (In the sandbox the pid namespace
+    # already took everything down with it, including processes that escaped the group.)
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+    proc.wait()
+    # A process that left the group (setsid) can still hold the pipe open. Give the reader
+    # a moment, then return what we have; never block on it (closing the pipe here would
+    # wait for the reader). The daemon reader closes the pipe when it finally sees EOF.
     reader.join(timeout=2)
-    proc.stdout.close()
     return code, b"".join(chunks).decode("utf-8", errors="replace")
 
 

@@ -35,7 +35,7 @@ def make_agent(tmp_path, script, **kwargs):
 # --- PermissionPolicy.check ------------------------------------------------
 
 def test_shell_operators_exact():
-    assert SHELL_OPERATORS == (";", "&&", "||", "|", "`", "$(", ">", "<", "\n")
+    assert SHELL_OPERATORS == (";", "&&", "||", "|", "`", "$(", ">", "<", "\n", "&")
 
 
 def test_read_only_allowed(tmp_path):
@@ -109,12 +109,19 @@ def test_bare_rule_matches_any_arguments(tmp_path):
     "git status && rm -rf x", "git status; rm -rf x", "git status || rm -rf x",
     "git status | sh", "git status `rm -rf x`", "git status $(rm -rf x)",
     "git status > important.txt", "git status < /dev/null", "git status\nrm -rf x",
+    "git status & rm -rf x",
 ])
 def test_operators_never_auto_allowed(tmp_path, command):
     tools = tools_for(tmp_path)
     policy = PermissionPolicy(allow=["bash(git status*)", "bash"])
     assert policy.check(tools.get("bash"), {"command": command}) == Decision.ASK
     assert policy.check(tools.get("bash"), {"command": "git status -s"}) == Decision.ALLOW
+
+
+def test_background_operator_not_allowed(tmp_path):
+    tools = tools_for(tmp_path)
+    policy = PermissionPolicy(allow=["bash(pytest*)"])
+    assert policy.check(tools.get("bash"), {"command": "pytest -q & rm -rf x"}) == Decision.ASK
 
 
 def test_operators_still_hit_deny_rules(tmp_path):
@@ -146,6 +153,68 @@ def test_remember_non_bash_is_bare_tool_name(tmp_path):
     policy.remember(tools.get("edit_file"), {"path": "a.txt", "old_string": "a", "new_string": "b"})
     assert policy.check(tools.get("edit_file"),
                         {"path": "other.txt", "old_string": "x", "new_string": "y"}) == Decision.ALLOW
+
+
+# --- Path rules see the normalized path -------------------------------------
+
+def test_path_rules_use_normalized_path(tmp_path):
+    ws = Workspace(tmp_path)
+    tools = make_default_tools(ws)
+    edit = tools.get("edit_file")
+    policy = PermissionPolicy(allow=["edit_file(src/*)"])
+    e = {"old_string": "a", "new_string": "b"}
+    assert policy.check(edit, {"path": "src/../setup.py", **e}, ws) == Decision.ASK
+    assert policy.check(edit, {"path": "./src/app.py", **e}, ws) == Decision.ALLOW
+    assert policy.check(edit, {"path": str(tmp_path / "src" / "app.py"), **e}, ws) == \
+        Decision.ALLOW
+
+
+def test_deny_path_rule_not_bypassed_by_spelling(tmp_path):
+    ws = Workspace(tmp_path)
+    read = make_default_tools(ws).get("read_file")
+    policy = PermissionPolicy(deny=["read_file(secrets/*)"])
+    for path in ["secrets/key", "./secrets/key", "x/../secrets/key",
+                 str(tmp_path / "secrets" / "key")]:
+        assert policy.check(read, {"path": path}, ws) == Decision.DENY, path
+    assert policy.check(read, {"path": "src/key"}, ws) == Decision.ALLOW
+
+
+def test_deny_path_rule_through_symlink(tmp_path):
+    (tmp_path / "secrets").mkdir()
+    os.symlink(tmp_path / "secrets", tmp_path / "public")
+    ws = Workspace(tmp_path)
+    read = make_default_tools(ws).get("read_file")
+    policy = PermissionPolicy(deny=["read_file(secrets/*)"])
+    assert policy.check(read, {"path": "public/key"}, ws) == Decision.DENY
+
+
+def test_outside_path_never_allowed(tmp_path):
+    root = tmp_path / "proj"
+    root.mkdir()
+    ws = Workspace(root)
+    write = make_default_tools(ws).get("write_file")
+    policy = PermissionPolicy(allow=["write_file", "write_file(*)"])
+    assert policy.check(write, {"path": "../x", "content": ""}, ws) == Decision.ASK
+    assert policy.check(write, {"path": "a/b.txt", "content": ""}, ws) == Decision.ALLOW
+
+
+def test_without_workspace_rules_see_raw_argument(tmp_path):
+    read = tools_for(tmp_path).get("read_file")
+    policy = PermissionPolicy(deny=["read_file(secrets/*)"])
+    assert policy.check(read, {"path": "secrets/key"}) == Decision.DENY
+    assert policy.check(read, {"path": "./secrets/key"}) == Decision.ALLOW
+
+
+def test_agent_uses_workspace_for_path_rules(tmp_path):
+    (tmp_path / "secrets").mkdir()
+    (tmp_path / "secrets" / "key").write_text("hunter2\n")
+    ws = Workspace(tmp_path)
+    client = FakeClient([reply(tool_calls=[call("read_file", {"path": "./secrets/key"})]),
+                         reply(content="ok")])
+    agent = Agent(client, "m", make_default_tools(ws), workspace=ws,
+                  permissions=PermissionPolicy(deny=["read_file(secrets/*)"]))
+    agent.run("go")
+    assert tool_results(agent) == [DENIED_BY_RULE]
 
 
 # --- Agent integration -----------------------------------------------------
