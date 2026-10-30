@@ -67,10 +67,11 @@ New: `agent/tools/todo.py`. Changed: `agent/workspace.py`, `agent/tools/registry
 ## Tests
 
 ```
-uv run pytest lessons/09-plans-and-checking-work --impl agent-or-solution-dir
+uv run pytest lessons/09-plans-and-checking-work                   # against your agent/
+uv run pytest lessons/09-plans-and-checking-work --impl solutions/09-plans-and-checking-work
 ```
 
-For the reference solution: `uv run pytest lessons/09-plans-and-checking-work --impl solutions/09-plans-and-checking-work`. The verify tests use a scripted client and a scripted `verify` function, so the number of requests in a script is part of the test. `test_live_uses_todo` needs `--live`: it runs a three-step task on the 27B, asserts only that the run finishes, and prints whether and how often `todo_write` was used.
+The verify tests use a scripted client and a scripted `verify` function, so the number of requests in a script is part of the test. `test_live_uses_todo` needs `--live`: it runs a three-step task on the 27B, asserts only that the run finishes, and prints whether and how often `todo_write` was used.
 
 ## Try it live
 

@@ -42,7 +42,7 @@ Extend your `agent/` package. Tests are in `lessons/02-tools/tests/`.
 **`agent/__main__.py`**
 - `ask` passes a `rich` yes/no prompt (default no) as `confirm_bash`, so every command is shown to you before it runs.
 
-**Warning: `bash` is not sandboxed.** Until lesson 5 it runs with your permissions in your files. A model can and will try `rm`, `git reset`, `pip install`. Run live exercises in a scratch copy of a project, not in this repository or anything you care about, and read each command before you answer `y`.
+**Warning: `bash` is not sandboxed.** Until lesson 5 it runs with your permissions in your files. A model can and will try `rm`, `git reset`, `pip install`. Run live exercises in a scratch copy of a project, not in this repository or anything you care about, and read each command before you answer `y`. Known gap: a command that starts a background job (`cmd &`) keeps the `bash` call open until that job exits, so a server or a `sleep` started that way blocks the agent; lesson 5 fixes this. Until then, answer `n` to such commands.
 
 ## Tests
 

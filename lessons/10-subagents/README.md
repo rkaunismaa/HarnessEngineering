@@ -27,7 +27,7 @@ Measured on the 27B (LM Studio), a project of 8 modules with 25 small functions 
 
 The helper gets `read_file`, `list_files` and `search` only: no `edit_file`, `write_file`, `bash`, `todo_write`, or `subagent`.
 
-- **Safety.** The helper has no approver, so nothing it does can wait for a yes or no. That is only workable because every tool it has is read-only: the policy never needs to ask. It still gets the parent's `PermissionPolicy`, so deny rules apply to it. Without that, a path denied to the parent (say `.env`) would be readable by asking the helper, since `subagent` itself is read-only and auto-allowed. Deny rules are the control that holds even with `auto_approve`, so they must cover every agent.
+- **Safety.** The helper has no approver, so nothing it does can wait for a yes or no. That is only workable because every tool it has is read-only: the policy never needs to ask. It still gets the parent's `PermissionPolicy`, so deny rules apply to it. Without that, a path denied to the parent (say `.env`) would be readable by asking the helper, since `subagent` itself is read-only and auto-allowed. Deny rules are the one permission control that still applies with `auto_approve`, so they must cover every agent. They only cover the tools they name, though (lesson 5): a `read_file` deny rule does not stop `search`, so the helper can still find text in a denied file that way.
 - **No runaway recursion.** A helper that can start helpers can spend unbounded requests. Without `subagent` in its set the depth is exactly one.
 - **No hidden side effects.** The parent sees only an answer. If the helper had changed a file, nothing in the parent's history would say so.
 - **Focus.** A model with three tools and a short system prompt picks among three tools. Fewer choices is also a small-model reliability feature.
@@ -59,7 +59,7 @@ New: `agent/tools/subagent.py`. Changed: `agent/tools/registry.py`, `agent/tools
 - The parent's registry still applies its usual validation: a call without `task` gives `Error: missing required parameter 'task'`.
 - Import `Agent` inside `make_subagent_tool`, not at the top of the module. `loop.py` imports the `tools` package, and `tools/__init__.py` imports this module, so a top-level import is circular.
 
-**`make_default_tools(ws, *, confirm_bash=None, client=None, model=None, log=None, context_window=None)`**: registers `subagent` only when both `client` and `model` are given. It is registered last, and the helper's tool set comes from the registry as it is when called.
+**`make_default_tools(ws, *, confirm_bash=None, client=None, model=None, log=None, context_window=None, permissions: PermissionPolicy | None = None)`**: registers `subagent` only when both `client` and `model` are given, and passes it `permissions` and `ws` so the helper obeys the parent's deny rules. It is registered last, and the helper's tool set comes from the registry as it is when called.
 
 **CLI**: `_build_agent` creates the client and the request log once and passes `client`, `model`, `log`, `context_window=config.context_window` and the same `PermissionPolicy` the parent uses to `make_default_tools`, so `ask` and `chat` offer `subagent` and the log shows both agents' requests in one file.
 
@@ -68,10 +68,11 @@ The tool description is what makes the model use it. Say what it is for (searche
 ## Tests
 
 ```
-uv run pytest lessons/10-subagents --impl agent-or-solution-dir
+uv run pytest lessons/10-subagents                   # against your agent/
+uv run pytest lessons/10-subagents --impl solutions/10-subagents
 ```
 
-For the reference solution: `uv run pytest lessons/10-subagents --impl solutions/10-subagents`. The subagent's requests come from the same scripted client as the parent's, in order: a script reads parent, helper, ..., parent, and the tests assert on `client.requests` by position. `test_live_subagent_search` needs `--live`: the 27B is asked to use `subagent` to find where a function is defined and the answer must name the right file. On the reference solution it used one delegation and finished in two parent requests.
+The subagent's requests come from the same scripted client as the parent's, in order: a script reads parent, helper, ..., parent, and the tests assert on `client.requests` by position. `test_live_subagent_search` needs `--live`: the 27B is asked to use `subagent` to find where a function is defined and the answer must name the right file. On the reference solution it used one delegation and finished in two parent requests.
 
 ## Try it live
 

@@ -86,7 +86,7 @@ Run the loop over the real server with part of the protocol removed. Write a thr
 1. a user message, then an assistant message with a `read_file` tool call, and **no** following `tool` message;
 2. the same, but with a `tool` message whose `tool_call_id` does not match the call.
 
-Observed here with both `qwen/qwen3.8-27b` (LM Studio) and `qwen3:4b-instruct` (Ollama): case 1 fails with HTTP `400` (Ollama's message: "Cannot continue an assistant message that contains tool calls."); case 2 was accepted and the model answered correctly. Write down what you learn: the error comes from the server's validation, and it arrives as an exception from the client call - your loop in this lesson does not handle it. a later lesson handles this.
+Observed here with both `qwen/qwen3.8-27b` (LM Studio) and `qwen3:4b-instruct` (Ollama): case 1 fails with HTTP `400` (Ollama's message: "Cannot continue an assistant message that contains tool calls."); case 2 was accepted and the model answered correctly. Write down what you learn: the error comes from the server's validation, and it arrives as an exception from the client call - your loop in this lesson does not handle it yet.
 
 Also try the 4B model on the happy path (`AGENT_BASE_URL=http://localhost:11434/v1 AGENT_MODEL=qwen3:4b-instruct`). In testing it handled one file, a missing file, and several files in one reply without trouble: it read `notes.txt` with `offset=2, limit=1` on its own and reported missing files correctly. The weak-model failures start in the next lessons, when there are more tools to choose between.
 

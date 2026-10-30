@@ -70,10 +70,11 @@ New: `agent/context.py`. Changed: `agent/loop.py`, `agent/events.py`, `agent/cli
 ## Tests
 
 ```
-uv run pytest lessons/08-context --impl agent-or-solution-dir
+uv run pytest lessons/08-context                   # against your agent/
+uv run pytest lessons/08-context --impl solutions/08-context
 ```
 
-For the reference solution: `uv run pytest lessons/08-context --impl solutions/08-context`. The unit tests build histories by hand; the agent tests use a scripted client where a summary is just another scripted reply (so the number and order of requests in a script is part of the test). `test_live_overflow_message` needs `--live`: it sends about 60K tokens to the 32K model, prints the real error and checks that `is_context_overflow` matches it.
+The unit tests build histories by hand; the agent tests use a scripted client where a summary is just another scripted reply (so the number and order of requests in a script is part of the test). `test_live_overflow_message` needs `--live`: it sends about 60K tokens to the 32K model, prints the real error and checks that `is_context_overflow` matches it.
 
 ## Try it live
 
@@ -81,7 +82,7 @@ For the reference solution: `uv run pytest lessons/08-context --impl solutions/0
 uv run python -m agent chat --root .
 ```
 
-To see compaction without writing 30K tokens, set a small window: `AGENT_CONTEXT_WINDOW=1500 uv run python -m agent chat`. Ask for the last line of a few 300-line files one by one. Each turn prints `Context compacted: about N -> M tokens.`, and `python -m agent log` shows `[compact]` entries with no tools in them. With the default window and 300-line files, watch the `prompt_tokens` in the log: on the run above the count fell from 6487 to 1372 in one step, when old file contents were replaced by notes, and stayed near 1,500 afterwards.
+To see compaction without writing 30K tokens, set a small window: `AGENT_CONTEXT_WINDOW=1500 uv run python -m agent chat`. Ask for the last line of a few 300-line files one by one. Each turn prints `Context compacted: about N -> M tokens.`, and `python -m agent log` shows `[compact]` entries with no tools in them. With the default window and 300-line files, watch the `prompt_tokens` in the log: on the run above the count fell from 6549 to 1475 in one step, when old file contents were replaced by notes, and stayed near 1,500 afterwards.
 
 A window of 1500 is far too small for real use (compaction ran on almost every request and the summaries kept losing the file contents); it is only there to make the mechanism visible.
 

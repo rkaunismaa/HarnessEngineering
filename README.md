@@ -50,7 +50,8 @@ When the source was unclear, the weaker label was used.
 ## Running tests
 
 ```
-uv run pytest                                        # all default tests (no model server needed)
+uv run pytest                                        # every lesson against your agent/ (no model server needed)
+uv run pytest --impl solutions/11-capstone          # every lesson against the final solution: checks your setup
 uv run pytest lessons/01-the-loop                    # one lesson, against your agent/
 uv run pytest lessons/01-the-loop --impl solutions/01-the-loop   # against a reference solution
 uv run pytest --live                                 # also run tests that need a live model server
@@ -60,7 +61,8 @@ uv run python scripts/check_solutions.py [--upto NN] # check every solution agai
 - `--impl PATH` picks the directory whose `agent` package the tests import (default: this repository, i.e. your code).
 - Tests marked `live` need a running model server and run only with `--live`.
 - Tests marked `sandbox` need a working bubblewrap and are skipped without it.
-- Later lessons' tests also pass on earlier-compatible code: a lesson never changes what an earlier lesson's tests check.
+- Plain `uv run pytest` runs every lesson's tests against your `agent/`, so it fails until you have finished every lesson. While you work, run one lesson at a time. To check that your setup works, run `uv run pytest --impl solutions/11-capstone`, which should pass.
+- Each lesson's tests pass against that lesson's solution and every later one: a later lesson extends the agent without breaking what an earlier lesson's tests check. `scripts/check_solutions.py` verifies this for every lesson and solution.
 - `scripts/run_solution.py <solution-dir> <agent args...>` runs the CLI of a reference solution (for example `uv run python scripts/run_solution.py solutions/11-capstone eval --n 3`) without touching your `agent/`.
 
 ## Lessons
