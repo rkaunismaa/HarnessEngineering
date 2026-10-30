@@ -10,7 +10,7 @@ uv sync
 ```
 
 Requires Python 3.10+ and [uv](https://docs.astral.sh/uv/). Your code goes in `agent/`.
-Start with `lessons/00-setup`.
+Start with [`lessons/00-setup`](lessons/00-setup/README.md).
 
 ## Running tests
 
