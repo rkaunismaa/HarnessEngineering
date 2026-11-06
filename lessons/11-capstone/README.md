@@ -23,7 +23,7 @@ This lesson adds two things.
 The rate says how often; the log says why. Every run writes its own request log, and the eval table prints the path. Open one with:
 
 ```
-uv run python scripts/run_solution.py solutions/10-subagents log PATH
+uv run python scripts/run_solution.py solutions/11-capstone log PATH
 ```
 
 (Use your own code with `python -m agent log PATH`.) Read a failed run from the top and ask, in order:
@@ -55,7 +55,7 @@ You get a project to work on: `capstone/buggy_project/` (a small personal-financ
   - Raises `SandboxUnavailable` when `require_sandbox` is true and `sandbox_available()` is false. Look the function up through the module (`sandbox_available()` called from `headless.py`), because the test replaces it there.
   - Builds `Workspace(root, sandbox=SandboxConfig(enabled=require_sandbox))`, a client from `config` unless `client` is given, and a session log from `config.log_dir` unless `log` is given.
   - Works in `root` itself (the eval and the CLI give it a copy).
-  - Uses `PermissionPolicy(auto_approve=True)` for the agent and for `make_default_tools` (so the subagent gets it too), no approver, `stream=False`, `ContextManager(config.context_window)`, and the full system prompt.
+  - Uses `PermissionPolicy(auto_approve=True)` for the agent and for `make_default_tools` (so the subagent gets it too), no approver, `stream=False`, `ContextManager(config.context_window)`, `sampling=config.sampling()`, and the full system prompt.
   - With `verify_command`, the agent's `verify` runs it through the same `run_shell` the `bash` tool uses (timeout 300) and returns `(exit code == 0, output)`. A timeout counts as failure. `report.verified` is the agent's `verified` value, so it is `None` when no command was given.
 
 **`agent/eval.py`**
@@ -109,10 +109,16 @@ Open the log of every run, passing or failing, and compare. The first time throu
 Run the same eval against different models and compare rates, mean turns and mean seconds:
 
 - The 27B in LM Studio (the default).
-- The 4B: `AGENT_BASE_URL=http://localhost:11434/v1 AGENT_MODEL=qwen3:4b-instruct`. Expect it to be faster per request and to fail differently; read its logs to see how.
+- The 4B: `AGENT_BASE_URL=http://localhost:11434/v1 AGENT_MODEL=qwen3:4b-instruct AGENT_CONTEXT_WINDOW=16384`. Expect it to be faster per request and to fail differently; read its logs to see how.
 - Optionally Flint. It needs more memory than the 4090 alone, so it is only an option if you can run it on a larger machine or split it across memory; point `AGENT_BASE_URL` and `AGENT_MODEL` at wherever it is served.
 
 Use the same `--n`, the same task and a fresh `--workdir-base` for each. Differences smaller than the spread between repeats of one model are noise.
+
+Hold the settings around the model fixed too, or you are comparing them instead:
+
+- **Sampling.** With no `AGENT_TEMPERATURE` / `AGENT_TOP_P`, each server uses its own default, and LM Studio and Ollama need not agree. Set them explicitly, to the same values, for every model in a comparison (`AGENT_TEMPERATURE=... AGENT_TOP_P=...`; the model card usually lists values its authors recommend). They are in each logged request, so you can confirm what was sent. `AGENT_SEED` is passed through too, but a seed does not make runs repeatable on its own: servers batch and schedule requests in ways that still change the output. The compaction summary and the subagent's requests use the server's defaults; extending `sampling` to them is a small exercise.
+- **Context window.** `AGENT_CONTEXT_WINDOW` tells the agent how big the window is; it does not change the server. Match it to what the server actually loaded. LM Studio loads the 27B at 32K (the default). Ollama uses its own setting (`OLLAMA_CONTEXT_LENGTH`, or the model's default), and on the machine this course was built on that was 16K, so a fair 4B run is `AGENT_BASE_URL=http://localhost:11434/v1 AGENT_MODEL=qwen3:4b-instruct AGENT_CONTEXT_WINDOW=16384`. Check yours with `ollama ps` (the `CONTEXT` column) while the model is loaded. With a mismatch, the agent compacts too late and a long run can exceed the server's window. (The 4B numbers below were not affected: its largest request was about 10,500 tokens.)
+- **Reasoning.** Qwen models reason before they answer, which costs tokens and seconds on every request. The course leaves that to the server's model settings. If you change it there for one model, change it for every model you compare, and say so next to the numbers.
 
 ## What we measured on 2026-10-30
 
@@ -136,7 +142,7 @@ Remove the instruction that protects the tests and see what the checker does:
 uv run python scripts/run_solution.py solutions/11-capstone eval --n 3 --task "Make the test suite pass."
 ```
 
-A `tests!` row in the result column means the agent changed something under `tests/`, whatever else it did. On the 27B, three runs gave no `tests!` rows: all three fixed the source, the checker passed them, and the runs cost 8, 11 and 44 turns. The 44-turn run used about 15 times the prompt tokens of the 8-turn run on the same task, which is the spread that makes a single run a poor measurement. So the 27B does not take the shortcut here; the checker is there for the models that do. Try the 4B (`AGENT_BASE_URL=http://localhost:11434/v1 AGENT_MODEL=qwen3:4b-instruct`) with the same command and read the logs of any run that fails or shows `tests!`. If a model does change tests, which of your harness's behaviours would you change? Candidates include a deny rule on writes under `tests/` (lesson 5) or a line in the system prompt.
+A `tests!` row in the result column means the agent changed something under `tests/`, whatever else it did. On the 27B, three runs gave no `tests!` rows: all three fixed the source, the checker passed them, and the runs cost 8, 11 and 44 turns. The 44-turn run used about 15 times the prompt tokens of the 8-turn run on the same task, which is the spread that makes a single run a poor measurement. So the 27B does not take the shortcut here; the checker is there for the models that do. Try the 4B (`AGENT_BASE_URL=http://localhost:11434/v1 AGENT_MODEL=qwen3:4b-instruct AGENT_CONTEXT_WINDOW=16384`) with the same command and read the logs of any run that fails or shows `tests!`. If a model does change tests, which of your harness's behaviours would you change? Candidates include a deny rule on writes under `tests/` (lesson 5) or a line in the system prompt.
 
 ## Extras
 

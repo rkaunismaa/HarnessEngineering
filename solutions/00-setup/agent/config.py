@@ -15,6 +15,16 @@ class Config:
     api_key: str = "lm-studio"
     context_window: int = 32768
     log_dir: Path = Path(".agent/logs")
+    # Sampling. None means "send nothing and use the server's default".
+    temperature: float | None = None
+    top_p: float | None = None
+    seed: int | None = None
+
+    def sampling(self) -> dict:
+        """The sampling settings that are set, as request keyword arguments."""
+        return {name: value for name, value in (
+            ("temperature", self.temperature), ("top_p", self.top_p), ("seed", self.seed),
+        ) if value is not None}
 
 
 _ENV = {
@@ -23,12 +33,17 @@ _ENV = {
     "api_key": "AGENT_API_KEY",
     "context_window": "AGENT_CONTEXT_WINDOW",
     "log_dir": "AGENT_LOG_DIR",
+    "temperature": "AGENT_TEMPERATURE",
+    "top_p": "AGENT_TOP_P",
+    "seed": "AGENT_SEED",
 }
 
 
 def _coerce(name: str, value):
-    if name == "context_window":
+    if name in ("context_window", "seed"):
         return int(value)
+    if name in ("temperature", "top_p"):
+        return float(value)
     if name == "log_dir":
         return Path(value)
     return str(value)

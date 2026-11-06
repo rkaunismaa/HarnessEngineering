@@ -38,6 +38,24 @@ def test_request_shape(tmp_path):
     assert req["tools"][0]["function"]["name"] == "read_file"
 
 
+def test_no_sampling_keys_by_default(tmp_path):
+    agent, client = make_agent(tmp_path, [reply(content="hi")])
+    agent.run("hello")
+    assert not {"temperature", "top_p", "seed"} & client.requests[0].keys()
+
+
+def test_sampling_sent_on_every_request(tmp_path):
+    (tmp_path / "a.txt").write_text("x\n")
+    agent, client = make_agent(tmp_path, [
+        reply(tool_calls=[call("read_file", {"path": "a.txt"})]),
+        reply(content="done"),
+    ], sampling={"temperature": 0.2, "seed": 7})
+    agent.run("read a.txt")
+    assert len(client.requests) == 2
+    for req in client.requests:
+        assert req["temperature"] == 0.2 and req["seed"] == 7
+
+
 def test_two_tool_calls_in_one_reply(tmp_path):
     (tmp_path / "a.txt").write_text("AAA\n")
     (tmp_path / "b.txt").write_text("BBB\n")

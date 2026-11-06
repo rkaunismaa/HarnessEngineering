@@ -69,7 +69,7 @@ Lessons 1 and 2 still apply. The live test is `test_live_4b_failures`: it needs 
 
 ## Try it live
 
-Use the 27B on LM Studio as usual and ask for something that cannot work:
+Use the 27B on LM Studio as usual and ask for something that cannot work. `/tmp/scratch` is the project from lesson 2; if you deleted it, run `uv run python scripts/make_fixture.py scratch /tmp/scratch` again.
 
 ```
 uv run python -m agent ask "Read the file config/settings.yaml and summarise it." --root /tmp/scratch

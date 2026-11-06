@@ -142,6 +142,13 @@ SCRIPT = lambda: [  # noqa: E731
 ]
 
 
+def test_stream_request_carries_sampling(tmp_path):
+    (tmp_path / "a.txt").write_text("hello\n")
+    agent, client = make_agent(tmp_path, SCRIPT(), stream=True, sampling={"top_p": 0.9})
+    agent.run("go")
+    assert all(req["top_p"] == 0.9 and req["stream"] for req in client.requests)
+
+
 def test_stream_agent_matches_nonstream(tmp_path):
     (tmp_path / "a.txt").write_text("hello\n")
     plain, _ = make_agent(tmp_path, SCRIPT())

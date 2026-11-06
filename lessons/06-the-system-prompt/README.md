@@ -24,7 +24,7 @@ Two further design points:
 - **Documented** (same page): "CLAUDE.md content is delivered as a user message after the system prompt, not as part of the system prompt itself." Your harness puts the instructions in the system message. That is a different choice, not a copy of this one (see the design note below).
 - **Documented** (same page, section *AGENTS.md*): Claude Code can read `AGENTS.md` as project instructions, but only as a fallback. By default it reads `AGENTS.md` when there is no `CLAUDE.md` (or `CLAUDE.local.md`) in the working directory or above it. If both exist, it reads the `CLAUDE.md` files only. A setting called `claude-md-and-agents-md` loads both. The page says reading `AGENTS.md` directly needs Claude Code v2.1.277 or later.
 - **Observed**: Claude Code's own system prompt carries environment details: the working directory, whether it is a git repository, the platform, the shell, the OS version, the date, and the model name and ID. That is where this lesson's `# Environment` section comes from. (This is what Claude Code's system prompt looks like to the model in a session; it is not described on the memory page, and it may change between versions.)
-- **Design note**: `AGENTS.md` is a convention several coding agents share, so this course prefers it. **That is the opposite order from Claude Code's default**, which prefers `CLAUDE.md`. The course picks `AGENTS.md` first because it is the neutral name and because a project that has both usually keeps the `AGENTS.md` as the shared one. If you want Claude Code's behavior, swap the two names in `INSTRUCTION_FILES`. The course also reads only one file, from the project root, and does not follow imports, walk up directories or load subdirectory files. Putting the text in the system message, rather than in a user message after it, is also a design choice; with a small model the system message is the place it pays most attention to, though this course has not measured that.
+- **Design note**: `AGENTS.md` is a convention several coding agents share, so this course prefers it. **That is the opposite order from Claude Code's default**, which prefers `CLAUDE.md`. The course picks `AGENTS.md` first because it is the tool-neutral name. If you want Claude Code's behavior, swap the two names in `INSTRUCTION_FILES`. The course also reads only one file, from the project root, and does not follow imports, walk up directories or load subdirectory files. Putting the text in the system message, rather than in a user message after it, is also a design choice; with a small model the system message is the place it pays most attention to, though this course has not measured that.
 
 ## What you'll build
 
@@ -79,7 +79,7 @@ Make a scratch project and give it instructions:
 ```
 mkdir -p ~/scratch6 && cd ~/scratch6 && git init -q -b main && echo "remember the milk" > notes.txt
 echo "End every answer with the word BANANA." > AGENTS.md
-cd <where agent is your package>
+cd -    # back to the repository root
 uv run python -m agent ask "What does notes.txt say?" --root ~/scratch6
 ```
 

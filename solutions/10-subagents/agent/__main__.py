@@ -82,7 +82,7 @@ def _build_agent(args, **agent_kwargs) -> Agent | None:
                  system=build_system_prompt(ws, tools), log=log,
                  permissions=permissions, approver=_approve,
                  workspace=ws, context=ContextManager(config.context_window),
-                 **agent_kwargs)
+                 **agent_kwargs, sampling=config.sampling())
 
 
 def _ask(args) -> int:

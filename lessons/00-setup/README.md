@@ -38,7 +38,10 @@ Package `agent/` with three modules.
 
 **`agent/config.py`**
 - `Config`: frozen dataclass with `base_url="http://localhost:1234/v1"`, `model="qwen/qwen3.8-27b"`, `api_key="lm-studio"`, `context_window=32768`, `log_dir=Path(".agent/logs")`.
-- `load_config(env=None, file=None) -> Config`. Layers, later wins: defaults, then `file` (a JSON object using the field names; ignored if it does not exist; `None` means `Path("agent.json")`), then environment variables `AGENT_BASE_URL`, `AGENT_MODEL`, `AGENT_API_KEY`, `AGENT_CONTEXT_WINDOW` (an `int`), `AGENT_LOG_DIR` (a `Path`). `env=None` means `os.environ`.
+- Three sampling fields, all defaulting to `None`: `temperature: float | None`, `top_p: float | None`, `seed: int | None`. `None` means "send nothing and let the server decide". `Config.sampling() -> dict` returns only the fields that are set, ready to pass as request keyword arguments (`{}` when none are).
+- `load_config(env=None, file=None) -> Config`. Layers, later wins: defaults, then `file` (a JSON object using the field names; ignored if it does not exist; `None` means `Path("agent.json")`), then environment variables `AGENT_BASE_URL`, `AGENT_MODEL`, `AGENT_API_KEY`, `AGENT_CONTEXT_WINDOW` (an `int`), `AGENT_LOG_DIR` (a `Path`), `AGENT_TEMPERATURE` and `AGENT_TOP_P` (`float`s), `AGENT_SEED` (an `int`). `env=None` means `os.environ`.
+
+Why sampling is in the config: when you send no `temperature`, the server uses its own default, and LM Studio and Ollama do not have to agree on what that is. Leaving it unset is fine while you build. It matters in lesson 11, where comparing two models with different server defaults would compare the defaults too.
 
 **`agent/client.py`**
 - `make_client(config) -> openai.OpenAI`, built with `base_url` and `api_key` from the config.
@@ -66,7 +69,7 @@ uv run pytest lessons/00-setup --impl solutions/00-setup      # against the refe
 1. In LM Studio, start the server (Developer tab, or `lms server start`) and load the model with a 32K context:
    `lms load qwen/qwen3.8-27b --context-length 32768`
 2. LM Studio's developer log (Developer tab, "Logs"; or `lms log stream`) shows each request and response. Keep it visible; you will use it constantly.
-3. Run `uv run python -m agent smoke` (from a directory where your `agent/` is importable), then `uv run pytest lessons/00-setup --live`.
+3. From the repository root, run `uv run python -m agent smoke`, then `uv run pytest lessons/00-setup --live`.
 
 What was seen on 2026-10-30 with `qwen/qwen3.8-27b`:
 

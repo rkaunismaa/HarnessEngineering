@@ -78,11 +78,11 @@ Lessons 1 to 3 still apply. `test_edit_detects_external_change` rewrites a file 
 
 ## Try it live
 
-Make a small file and ask the 27B to change it:
+Make a fresh copy of the practice project (its `calc.py` has a function `total` used twice) and ask the 27B to change it:
 
 ```
-mkdir -p /tmp/scratch && printf 'def total(items):\n    return sum(items)\n\nprint(total([1, 2]))\nprint(total([3]))\n' > /tmp/scratch/calc.py
-uv run python -m agent ask "In calc.py rename the function total to add_up everywhere, using edit_file." --root /tmp/scratch
+uv run python scripts/make_fixture.py scratch /tmp/scratch4
+uv run python -m agent ask "In calc.py rename the function total to add_up everywhere, using edit_file." --root /tmp/scratch4
 uv run python -m agent log
 ```
 

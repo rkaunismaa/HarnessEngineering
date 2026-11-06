@@ -50,11 +50,11 @@ Add to your `agent/` package. Tests are in `lessons/01-the-loop/tests/`.
 
 **`agent/loop.py`**
 - `TurnResult`: `final_text: str`, `stop_reason: str` (`"done"` in this lesson), `turns: int`, `usage: Usage`, `error: str | None = None`.
-- `Agent(client, model, tools, *, system=None, log=None)` with `.messages` (starts with the system message if given) and `run(user_message) -> TurnResult`. Each request sends `model`, `messages` and `tools=tools.schemas()`. Every tool call in a reply is run in order and answered with `{"role": "tool", "tool_call_id": id, "content": result}`. The run ends when a reply has no tool calls; `final_text` is that reply's content, or `""` when the content is `None` or empty. Usage is summed over all requests. History persists between `run` calls.
+- `Agent(client, model, tools, *, system=None, log=None, sampling=None)` with `.messages` (starts with the system message if given) and `run(user_message) -> TurnResult`. Each request sends `model`, `messages` and `tools=tools.schemas()`, plus every key in `sampling` (a dict such as `config.sampling()`; `None` or `{}` adds nothing). Later lessons keep adding keyword arguments after these. Every tool call in a reply is run in order and answered with `{"role": "tool", "tool_call_id": id, "content": result}`. The run ends when a reply has no tool calls; `final_text` is that reply's content, or `""` when the content is `None` or empty. Usage is summed over all requests. History persists between `run` calls.
 - Structure `run` so that "make one request" and "run one tool call" are separate methods. Later lessons hook into each.
 
 **`agent/__main__.py`** (extend the lesson 0 parser)
-- `python -m agent ask "<prompt>" [--root DIR]`: run the agent with `config`'s model, work in `--root` (default `.`), write a session log under `config.log_dir`, print the final text.
+- `python -m agent ask "<prompt>" [--root DIR]`: run the agent with `config`'s model and `sampling=config.sampling()`, work in `--root` (default `.`), write a session log under `config.log_dir`, print the final text.
 - `python -m agent log [PATH]`: print `format_entry` for every line of the log (default: `latest_log(config.log_dir)`) using `rich`; print the text literally, not as rich markup.
 
 ## Tests
@@ -67,11 +67,11 @@ uv run pytest lessons/01-the-loop --live                         # includes the 
 
 ## Try it live
 
-Make a small file and ask about it:
+From the repository root, make a scratch copy of the small practice project and ask about a file in it (`--root` keeps the agent out of the course repository):
 
 ```
-printf 'alpha\nbeta\ngamma\n' > notes.txt
-uv run python -m agent ask "Read notes.txt and tell me the second line."
+uv run python scripts/make_fixture.py scratch /tmp/scratch1
+uv run python -m agent ask "Read notes.txt and tell me the second line." --root /tmp/scratch1
 uv run python -m agent log
 ```
 

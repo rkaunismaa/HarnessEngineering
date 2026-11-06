@@ -38,7 +38,7 @@ def _ask(args) -> int:
     agent = Agent(make_client(config), config.model,
                   make_default_tools(Workspace(Path(args.root)),
                                      confirm_bash=_confirm_bash),
-                  log=RequestLog.for_session(config.log_dir))
+                  log=RequestLog.for_session(config.log_dir), sampling=config.sampling())
     result = agent.run(args.prompt)
     print(result.final_text)
     return 0

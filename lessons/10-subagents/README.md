@@ -76,18 +76,19 @@ The subagent's requests come from the same scripted client as the parent's, in o
 
 ## Try it live
 
-Make a project with a few larger files and ask something that needs reading:
+Make the 8-module project described above and ask something that needs reading:
 
 ```
-uv run python -m agent ask --root ../some-project "Use the subagent tool to find which module defines a function that does X, then tell me the module."
+uv run python scripts/make_fixture.py pattern /tmp/pattern10
+uv run python -m agent ask --root /tmp/pattern10 "Use the subagent tool to find which function breaks the pattern total = a + b * N, then tell me the module."
 uv run python -m agent log
 ```
 
-In the log, the lines tagged `[main]` are the parent and `[subagent-1]` the helper. Compare the `prompt=` numbers: the parent's stay small. Run it again without mentioning the subagent and see whether the model delegates by itself.
+`scripts/make_fixture.py pattern` builds this project from the description above (the odd one out is `func_5_13` in `module_5.py`, and `compute_invoice_total` is in `module_3.py`); it is a reconstruction, not the exact project the numbers came from. In the log, the lines tagged `[main]` are the parent and `[subagent-1]` the helper. Compare the `prompt=` numbers: the parent's stay small. Run it again without mentioning the subagent and see whether the model delegates by itself.
 
 ## Break it
 
-Use the 4B (`AGENT_BASE_URL=http://localhost:11434/v1 AGENT_MODEL=qwen3:4b-instruct`) on the "which function breaks the pattern" project above, with the prompt ending "Use the subagent tool for the search." Read the log: does it call `subagent`, does the `task` stand alone, and is the answer right?
+Use the 4B (`AGENT_BASE_URL=http://localhost:11434/v1 AGENT_MODEL=qwen3:4b-instruct AGENT_CONTEXT_WINDOW=16384`) on a fresh copy of the pattern project (`uv run python scripts/make_fixture.py pattern /tmp/pattern10b`), with the prompt ending "Use the subagent tool for the search." Read the log: does it call `subagent`, does the `task` stand alone, and is the answer right?
 
 What happened in three runs: the 4B did call `subagent` every time, with the parent making 3, 3 and 8 requests (5,047 to 30,878 parent prompt tokens). In at least two of the three runs the final answer said no function broke the pattern, which is wrong (`func_5_13` in `module_5.py`). The harness did its part, but a helper's answer is only as good as the helper's model, and the parent trusts it: one run kept reading files itself after the helper reported, which is how it reached 30K. Isolation protects the parent's context, not the parent's judgment. Try rewording the tool description to ask for evidence (file, line, quoted code) and see whether the answers become checkable.
 

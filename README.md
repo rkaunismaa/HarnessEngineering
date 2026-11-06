@@ -10,12 +10,13 @@ Each lesson explains one problem, how Claude Code deals with it, and what to bui
 - Comfort reading and writing Python (dataclasses, argparse, subprocess, pytest). No machine-learning background needed.
 - A local model server speaking the OpenAI chat-completions API with tool calling:
   - **LM Studio** at `http://localhost:1234/v1` with `qwen/qwen3.8-27b` loaded at a 32K context. This is the default in `agent/config.py` (lesson 0) and the model every "what we measured" number comes from. A GPU with about 24 GB of memory (the author used a 4090) runs it at a usable speed.
-  - **Ollama** at `http://localhost:11434/v1` with `qwen3:4b-instruct` (`ollama pull qwen3:4b-instruct`) as the weak model for the "Break it" exercises. Point the agent at it with `AGENT_BASE_URL` and `AGENT_MODEL`.
+  - **Ollama** at `http://localhost:11434/v1` with `qwen3:4b-instruct` (`ollama pull qwen3:4b-instruct`) as the weak model for the "Break it" exercises. Point the agent at it with `AGENT_BASE_URL` and `AGENT_MODEL`. From lesson 8 on, also set `AGENT_CONTEXT_WINDOW` to the context Ollama actually loaded (the `CONTEXT` column of `ollama ps`; 16384 on the machine this course was built on), because the agent's default of 32768 describes LM Studio, not Ollama.
   - Other models work if they support tool calls, but the numbers in the lessons will differ.
 - **bubblewrap** (`bwrap`) for the sandbox in lessons 5 and 11: `sudo apt install bubblewrap` on Debian/Ubuntu. Check that it works unprivileged:
 
   ```
-  bwrap --ro-bind / / --dev /dev --unshare-all true && echo sandbox ok
+  bwrap --unshare-all --die-with-parent --new-session --ro-bind / / --dev /dev --proc /proc \
+        --tmpfs /tmp --tmpfs /run --unsetenv SSH_AUTH_SOCK true && echo sandbox ok
   ```
 
   Without it, the sandbox tests are skipped and `python -m agent run` and `eval` refuse to start.
@@ -33,7 +34,7 @@ Your code goes in `agent/` at the repository root (it starts as a docstring). St
 1. Read the lesson's `README.md`. Its sections are always the same: **Why this exists** (the problem), **How Claude Code does it** (how a production agent handles it), **What you'll build** (the spec: modules, signatures, exact strings), **Tests**, **Try it live**, **Break it** (an exercise with the weak 4B model) and **Extras**.
 2. Write the code in `agent/`. Each lesson starts from your previous lesson's code. If you got stuck, copy `solutions/<previous lesson>/agent` into `agent/`.
 3. Run the lesson's tests until they pass. They use a scripted fake model (`testing/fake_model.py`), so they are fast and need no server.
-4. Run the live exercise against the real model and look at what happens. The lessons record what the author saw on 2026-10-30 so you can compare.
+4. Run the live exercise against the real model and look at what happens. Run every command from the repository root, and point the agent at a scratch copy of a practice project with `--root` (`uv run python scripts/make_fixture.py NAME DEST`; the lessons give the commands), never at this repository: the agent can edit whatever `--root` contains. The lessons record what the author saw on 2026-10-30 so you can compare.
 
 The README describes what to build and never contains the implementation. The reference solutions in `solutions/` are there to unblock you and to check your reading of the spec; try the lesson first.
 
@@ -89,6 +90,7 @@ agent/                 your package (starts empty)
 lessons/NN-name/       README.md and tests/ for each lesson
 solutions/NN-name/     reference `agent/` package as it stands at the end of lesson NN
 testing/               the scripted fake model the tests use
-scripts/               check_solutions.py, run_solution.py
+scripts/               check_solutions.py, run_solution.py, make_fixture.py
+fixtures/              practice projects for the live exercises (make_fixture.py copies them)
 capstone/              the buggy project and the hidden-test checker used by lesson 11
 ```

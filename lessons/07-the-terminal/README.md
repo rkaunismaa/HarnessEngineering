@@ -47,7 +47,7 @@ New: `agent/events.py`, `agent/stream.py`, `agent/cli.py`. Changed: `agent/loop.
 
 **`Agent(..., events: AgentEvents | None = None, stream: bool = False)`**:
 
-- `stream=True` adds `stream=True, stream_options={"include_usage": True}` to the request and uses `accumulate`. `TurnResult.usage` is filled from the streamed usage. With `stream=False` nothing changes. The same script must give the same `agent.messages` either way.
+- `stream=True` adds `stream=True, stream_options={"include_usage": True}` to the request (the `sampling` keys from lesson 1 are still sent) and uses `accumulate`. `TurnResult.usage` is filled from the streamed usage. With `stream=False` nothing changes. The same script must give the same `agent.messages` either way.
 - `on_tool_call` fires before each call is handled and `on_tool_result` after, in both modes, including for calls that are refused (denied, unknown tool, loop guard).
 - The log's `response` for a streamed request is `{"streamed": True, "message": ..., "usage": ..., "finish_reason": ...}`. If the stream is interrupted, it is logged with whatever had arrived and `"interrupted": True`. Update `format_entry` so `python -m agent log` can print streamed entries.
 - `KeyboardInterrupt` while streaming or while a tool runs makes `run` return `stop_reason == "interrupted"` after repairing the history as above. Do not install your own signal handler; the default behavior of Ctrl-C is what you want. The next `run` works.
@@ -72,10 +72,11 @@ The tests use `to_chunks` from `testing/fake_model.py` to turn a scripted reply 
 ## Try it live
 
 ```
-uv run python -m agent chat --root .
+uv run python scripts/make_fixture.py nums /tmp/nums7
+uv run python -m agent chat --root /tmp/nums7
 ```
 
-Ask something that needs a tool, for example "read nums.txt and tell me the last line" in a directory with a 300-line `nums.txt`. What was seen with the 27B: the reasoning scrolls by dimmed first, then `> list_files {}` with a three-line preview and "(3 more lines)", then `> read_file {...}` with "... (297 more lines)", then the answer. Type `/reasoning` and ask again to hide the reasoning. Ask for a long essay and press Ctrl-C after a couple of seconds: you get `Interrupted.` and a fresh prompt, and the next question works. (Tested without a terminal by sending a real SIGINT two seconds into a live stream: `run` returned `interrupted`, the history held only the user message, and the following `run` returned "Hello.".) Whether the server stops generating when the client disconnects is up to the server; this was not checked.
+Ask something that needs a tool, for example "read nums.txt and tell me the last line" (each `nums*.txt` there has 300 lines). What was seen with the 27B: the reasoning scrolls by dimmed first, then `> list_files {}` with a three-line preview and "(3 more lines)", then `> read_file {...}` with "... (297 more lines)", then the answer. Type `/reasoning` and ask again to hide the reasoning. Ask for a long essay and press Ctrl-C after a couple of seconds: you get `Interrupted.` and a fresh prompt, and the next question works. (Tested without a terminal by sending a real SIGINT two seconds into a live stream: `run` returned `interrupted`, the history held only the user message, and the following `run` returned "Hello.".) Whether the server stops generating when the client disconnects is up to the server; this was not checked.
 
 ## Break it
 

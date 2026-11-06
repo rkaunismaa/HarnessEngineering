@@ -75,17 +75,20 @@ The verify tests use a scripted client and a scripted `verify` function, so the 
 
 ## Try it live
 
-Make a small project with a failing test and run the agent with a check:
+Make a copy of the six-bug project described above and run the agent with a check:
 
 ```
-uv run python -m agent chat --root ../some-project --verify "python -m pytest -q"
+uv run python scripts/make_fixture.py six-bugs /tmp/bugs9
+uv run python -m agent chat --root /tmp/bugs9 --verify "python -m pytest -q"
 ```
+
+`fixtures/six-bugs` is rebuilt from the description above: the same six bugs and eight tests, but not byte for byte the project the numbers came from (6 of its 8 tests fail before any fix), so expect your counts to differ.
 
 Ask for a change that touches several things. Watch for the magenta list after each `todo_write` and for `Check failed:` followed by pytest's output. The failure text appears in `python -m agent log` as the last user message of the next request.
 
 ## Break it
 
-Use the 4B (`AGENT_BASE_URL=http://localhost:11434/v1 AGENT_MODEL=qwen3:4b-instruct`) on a project with several separate bugs and a test for each (the `utils.py` above is a good size). Run `ask "The tests in this project fail. Fix the code so they all pass."` three times without `--verify`, then three times with it, and run `pytest` yourself after each run. Expect the unchecked runs to end with a summary that sounds sure of itself while tests still fail, and the checked runs to be sent back at least once. Then compare `max_verify_attempts` values: it is the number of failed checks after which the harness gives up, so 1 means one check and no retry, the default 2 allows one retry, and 3 allows two. See how often one retry is enough, and make `verify` always return `(False, "no")` to see the run stop after `max_verify_attempts` checks with `verified=False`.
+Use the 4B (`AGENT_BASE_URL=http://localhost:11434/v1 AGENT_MODEL=qwen3:4b-instruct AGENT_CONTEXT_WINDOW=16384`) on a fresh copy of the six-bug project (`uv run python scripts/make_fixture.py six-bugs /tmp/bugs9b`). Run `ask "The tests in this project fail. Fix the code so they all pass."` three times without `--verify`, then three times with it, and run `pytest` yourself after each run. Expect the unchecked runs to end with a summary that sounds sure of itself while tests still fail, and the checked runs to be sent back at least once. Then compare `max_verify_attempts` values: it is the number of failed checks after which the harness gives up, so 1 means one check and no retry, the default 2 allows one retry, and 3 allows two. See how often one retry is enough, and make `verify` always return `(False, "no")` to see the run stop after `max_verify_attempts` checks with `verified=False`.
 
 Try the same with only one or two bugs: if the 4B fixes everything unaided, the check costs a command and changes nothing. That is the right outcome.
 

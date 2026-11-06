@@ -66,7 +66,8 @@ def run_task(task: str, root: Path, config: Config, *, client=None, require_sand
     agent = Agent(client, config.model, tools, system=build_system_prompt(ws, tools), log=log,
                   max_turns=max_turns, permissions=permissions, workspace=ws, stream=False,
                   context=ContextManager(config.context_window),
-                  verify=_make_verify(ws, verify_command) if verify_command else None)
+                  verify=_make_verify(ws, verify_command) if verify_command else None,
+                  sampling=config.sampling())
     start = time.monotonic()
     result = agent.run(task)
     return RunReport(result.stop_reason, result.final_text, result.turns,

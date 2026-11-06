@@ -79,10 +79,13 @@ The unit tests build histories by hand; the agent tests use a scripted client wh
 ## Try it live
 
 ```
-uv run python -m agent chat --root .
+uv run python scripts/make_fixture.py nums /tmp/nums8
+uv run python -m agent chat --root /tmp/nums8
 ```
 
-To see compaction without writing 30K tokens, set a small window: `AGENT_CONTEXT_WINDOW=1500 uv run python -m agent chat`. Ask for the last line of a few 300-line files one by one. Each turn prints `Context compacted: about N -> M tokens.`, and `python -m agent log` shows `[compact]` entries with no tools in them. With the default window and 300-line files, watch the `prompt_tokens` in the log: on the run above the count fell from 6549 to 1475 in one step, when old file contents were replaced by notes, and stayed near 1,500 afterwards.
+To see compaction without writing 30K tokens, set a small window: `AGENT_CONTEXT_WINDOW=1500 uv run python -m agent chat --root /tmp/nums8`. Ask for the last line of `nums.txt`, `nums2.txt`, `nums3.txt` and `nums4.txt` one by one (300 lines each). Each turn prints `Context compacted: about N -> M tokens.`, and `python -m agent log` shows `[compact]` entries with no tools in them. With the default window and 300-line files, watch the `prompt_tokens` in the log: on the run above the count fell from 6549 to 1475 in one step, when old file contents were replaced by notes, and stayed near 1,500 afterwards.
+
+If you try this lesson on the 4B through Ollama, set `AGENT_CONTEXT_WINDOW` to the context Ollama loaded (`ollama ps`, `CONTEXT` column), not the 32768 default: the agent can only compact in time if it knows the real size. Unlike LM Studio, Ollama is commonly described as cutting an oversized prompt down instead of rejecting it; this course did not test that, so check your server's log.
 
 A window of 1500 is far too small for real use (compaction ran on almost every request and the summaries kept losing the file contents); it is only there to make the mechanism visible.
 

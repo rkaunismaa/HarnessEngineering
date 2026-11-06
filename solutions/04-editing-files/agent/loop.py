@@ -27,11 +27,13 @@ class TurnResult:
 
 class Agent:
     def __init__(self, client, model: str, tools: ToolRegistry, *,
-                 system: str | None = None, log: RequestLog | None = None, max_turns: int = 50):
+                 system: str | None = None, log: RequestLog | None = None, max_turns: int = 50,
+                 sampling: dict | None = None):
         self.client = client
         self.model = model
         self.tools = tools
         self.log = log
+        self.sampling = dict(sampling or {})  # temperature, top_p, seed; empty: server defaults
         self.max_turns = max_turns
         self._last_call: tuple[str, str] | None = None
         self._repeats = 0
@@ -64,7 +66,7 @@ class Agent:
     def _request(self):
         """Make one model request and log it."""
         kwargs = {"model": self.model, "messages": self.messages,
-                  "tools": self.tools.schemas()}
+                  "tools": self.tools.schemas(), **self.sampling}
         start = time.monotonic()
         completion = self.client.chat.completions.create(**kwargs)
         if self.log:

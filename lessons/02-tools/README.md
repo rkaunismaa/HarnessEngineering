@@ -56,13 +56,10 @@ Lesson 1's tests still apply (one of them was loosened to check that `read_file`
 
 ## Try it live
 
-Make a scratch project:
+From the repository root, make a scratch project (`app/util.py`, `app/billing.py`, `app/main.py` and two small files):
 
 ```
-mkdir -p /tmp/scratch/app && cd /tmp/scratch
-printf 'def helper():\n    return 1\n' > app/util.py
-printf 'def compute_invoice_total(items):\n    return sum(items)\n' > app/billing.py
-printf 'from app.billing import compute_invoice_total\nprint(compute_invoice_total([1]))\n' > app/main.py
+uv run python scripts/make_fixture.py scratch /tmp/scratch
 ```
 
 **1. What the schemas cost.** Send "Say hi." with only `read_file` registered, then with all four tools, and compare `prompt_tokens` (a throwaway script is fine). Reference numbers:

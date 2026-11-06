@@ -50,7 +50,8 @@ class Agent:
                  events: AgentEvents | None = None, stream: bool = False,
                  context: ContextManager | None = None,
                  verify: Callable[[], tuple[bool, str]] | None = None,
-                 max_verify_attempts: int = 2):
+                 max_verify_attempts: int = 2,
+                 sampling: dict | None = None):
         self.client = client
         self.model = model
         self.tools = tools
@@ -58,6 +59,7 @@ class Agent:
         self.approver = approver
         self.workspace = workspace  # lets path rules match the normalized path
         self.log = log
+        self.sampling = dict(sampling or {})  # temperature, top_p, seed; empty: server defaults
         self.events = events or AgentEvents()
         self.stream = stream
         self.context = context  # None: the history is sent as it is
@@ -181,7 +183,7 @@ class Agent:
     def _request(self):
         """Make one model request and log it."""
         kwargs = {"model": self.model, "messages": self.messages,
-                  "tools": self.tools.schemas()}
+                  "tools": self.tools.schemas(), **self.sampling}
         start = time.monotonic()
         completion = self.client.chat.completions.create(**kwargs)
         if self.log:
@@ -191,7 +193,7 @@ class Agent:
     def _request_stream(self):
         """One streamed model request: returns ``(message_dict, usage or None)``."""
         kwargs = {"model": self.model, "messages": self.messages,
-                  "tools": self.tools.schemas(), "stream": True,
+                  "tools": self.tools.schemas(), **self.sampling, "stream": True,
                   "stream_options": {"include_usage": True}}
         start = time.monotonic()
         try:

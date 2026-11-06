@@ -143,7 +143,7 @@ A behavior worth knowing, from `test_real_tmp_is_private`: writing to `/tmp/what
 
 ## Try it live
 
-Run these from a directory where `agent` is your package. Each `bash` call stops and asks you.
+Run these from the repository root. Each `bash` call stops and asks you.
 
 ```
 mkdir -p ~/scratch5

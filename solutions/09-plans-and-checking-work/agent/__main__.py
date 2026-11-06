@@ -79,7 +79,7 @@ def _build_agent(args, **agent_kwargs) -> Agent | None:
                  log=RequestLog.for_session(config.log_dir),
                  permissions=PermissionPolicy(allow=args.allow), approver=_approve,
                  workspace=ws, context=ContextManager(config.context_window),
-                 **agent_kwargs)
+                 **agent_kwargs, sampling=config.sampling())
 
 
 def _ask(args) -> int:

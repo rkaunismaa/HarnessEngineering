@@ -27,6 +27,20 @@ def test_env_log_dir_is_path():
     assert cfg.log_dir == Path("/tmp/logs")
 
 
+def test_sampling_unset_by_default():
+    cfg = load_config(env={}, file=Path("/nonexistent"))
+    assert (cfg.temperature, cfg.top_p, cfg.seed) == (None, None, None)
+    assert cfg.sampling() == {}
+
+
+def test_sampling_from_file_and_env(tmp_path):
+    f = tmp_path / "agent.json"
+    f.write_text(json.dumps({"temperature": 0.2, "seed": 1}))
+    cfg = load_config(env={"AGENT_TOP_P": "0.9", "AGENT_SEED": "7"}, file=f)
+    assert cfg.sampling() == {"temperature": 0.2, "top_p": 0.9, "seed": 7}
+    assert isinstance(cfg.top_p, float) and isinstance(cfg.seed, int)
+
+
 def test_smoke_ok():
     client = FakeClient([reply(tool_calls=[call("read_file", {"path": "notes.txt"})],
                                prompt_tokens=329)])

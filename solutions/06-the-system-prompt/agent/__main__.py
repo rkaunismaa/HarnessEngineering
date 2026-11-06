@@ -61,7 +61,7 @@ def _ask(args) -> int:
                   system=build_system_prompt(ws, tools),
                   log=RequestLog.for_session(config.log_dir),
                   permissions=PermissionPolicy(allow=args.allow), approver=_approve,
-                  workspace=ws)
+                  workspace=ws, sampling=config.sampling())
     result = agent.run(args.prompt)
     if result.stop_reason == "error":
         print(result.error, file=sys.stderr)

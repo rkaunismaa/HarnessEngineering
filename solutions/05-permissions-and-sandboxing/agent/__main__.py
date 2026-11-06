@@ -58,7 +58,7 @@ def _ask(args) -> int:
     agent = Agent(make_client(config), config.model, make_default_tools(ws),
                   log=RequestLog.for_session(config.log_dir),
                   permissions=PermissionPolicy(allow=args.allow), approver=_approve,
-                  workspace=ws)
+                  workspace=ws, sampling=config.sampling())
     result = agent.run(args.prompt)
     if result.stop_reason == "error":
         print(result.error, file=sys.stderr)
