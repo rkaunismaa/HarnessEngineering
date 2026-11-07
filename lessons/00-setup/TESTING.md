@@ -68,19 +68,73 @@ A good experiment is to rename `test_defaults` to `check_defaults` and run `--co
 
 ## 1. Which `agent` gets tested
 
-The test file only says `from agent.config import ...` and `from agent.client import ...`. It never names a folder. The root `conftest.py` decides which folder that import finds:
+The test file only says `from agent.config import ...` and `from agent.client import ...`. It never names a folder. Two functions in the root `conftest.py` decide which folder that import finds:
 
 ```python
-parser.addoption("--impl", default=str(ROOT), ...)   # default: repo root
+ROOT = Path(__file__).resolve().parent          # the repo root (where conftest.py lives)
+
+def pytest_addoption(parser):
+    parser.addoption("--impl", default=str(ROOT), help="...")
+    parser.addoption("--live", action="store_true", help="...")
 
 def pytest_configure(config):
+    ...
     impl = str(Path(config.getoption("--impl")).resolve())
     for name in [m for m in sys.modules if m == "agent" or m.startswith("agent.")]:
         del sys.modules[name]       # forget any agent already imported
     sys.path.insert(0, impl)        # put the chosen folder first on the import path
 ```
 
-So the same tests run against either package:
+### Hooks: functions pytest calls by name
+
+Pytest loads `conftest.py` automatically and looks for functions with specific names, called *hooks*. It's the same idea as finding tests by their `test_` prefix. Nothing calls these hooks in the code; pytest calls each one at a fixed point in a run:
+
+| When | Hook | What it does here |
+|---|---|---|
+| Reading the command line | `pytest_addoption` | Registers `--impl` and `--live`, so pytest accepts them instead of failing with "unrecognized arguments" |
+| After the options are parsed, before any test file is imported | `pytest_configure` | Sets up which `agent` package will be imported |
+| After collection, before running | `pytest_collection_modifyitems` | Skips the `live` and `sandbox` tests (section 4) |
+
+The timing is the important part. `pytest_configure` runs **before** pytest imports `test_setup.py`, so by the time that file runs `from agent.client import ...`, the import path is already set.
+
+### How Python decides which `agent` to import
+
+When Python runs `import agent`, it does two things in order:
+
+1. **It looks in `sys.modules`**, a dict of modules already imported in this process. If `agent` is there, Python reuses it and never looks at the disk.
+2. **Otherwise it searches the folders in `sys.path`, in order**, and uses the first one that contains an `agent/` package.
+
+`pytest_configure` handles both:
+
+- **`del sys.modules[...]`** removes `agent` and every `agent.something` from the cache, in case anything imported one earlier. Without this, a cached copy would win regardless of `sys.path`.
+- **`sys.path.insert(0, impl)`** puts your chosen folder *first* in the search. The repo root is also on `sys.path`, because `pyproject.toml` has `pythonpath = ["."]`, but your folder now comes before it. So with `--impl solutions/03-...`, Python finds `solutions/03-.../agent/` before reaching the repo root's `agent/`.
+
+With no `--impl`, the default is `ROOT`, so the repo root goes first and your own `agent/` is the one tested.
+
+A throwaway test that printed where `agent` came from, run with `--impl solutions/03-when-the-model-gets-it-wrong`, showed:
+
+```
+agent -> .../solutions/03-when-the-model-gets-it-wrong/agent/__init__.py
+sys.path[:3] -> ['.../solutions/03-when-the-model-gets-it-wrong',
+                 '.../HarnessEngineering',          # repo root, from pythonpath = ["."]
+                 '.../.venv/bin']
+```
+
+The test files only ever say `agent`, and the folder that comes first on `sys.path` decides which one that means.
+
+### Two smaller details
+
+- **`.resolve()`** turns a relative path like `solutions/03-...` into an absolute one. The tests can then change the current folder without breaking the import path.
+- **`--import-mode=importlib`** in `pyproject.toml` stops pytest from adding each test file's own folder to `sys.path`. In pytest's default mode, every test folder is added there too. That doesn't affect which `agent` is found, but it keeps the import path limited to what conftest set up.
+
+### What `--impl` can't do
+
+- **It picks one package per pytest run.** Once `agent` is imported, every test in that run uses it. To compare your code with the solution, run pytest twice.
+- **It points at the folder that *contains* `agent/`, not at `agent/` itself.** `--impl solutions/03-when-the-model-gets-it-wrong` is right. `--impl solutions/03-when-the-model-gets-it-wrong/agent` would put the package's own folder on the path, and `import agent` would fail.
+
+### In practice
+
+The same tests run against either package:
 
 ```
 uv run pytest lessons/00-setup                              # your agent/ in the repo root
