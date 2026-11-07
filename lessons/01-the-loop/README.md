@@ -65,6 +65,8 @@ uv run pytest lessons/01-the-loop --impl solutions/01-the-loop   # against the r
 uv run pytest lessons/01-the-loop --live                         # includes the real-model test
 ```
 
+[TESTING.md](TESTING.md) walks through what each test checks and how the scripted fake model drives your loop.
+
 ## Try it live
 
 From the repository root, make a scratch copy of the small practice project and ask about a file in it (`--root` keeps the agent out of the course repository):
