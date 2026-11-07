@@ -84,6 +84,8 @@ uv run pytest lessons/11-capstone                   # against your agent/
 uv run pytest lessons/11-capstone --impl solutions/11-capstone
 ```
 
+[TESTING.md](TESTING.md) walks through what each test checks and why.
+
 Most tests use the scripted client and never touch the network. `test_verify_runs_in_sandbox` needs bubblewrap and is skipped without it. `test_live_capstone_once` needs `--live`: it runs the real model once on a copy of the buggy project and only asserts that the run finishes and the checker returns a result, since whether the agent succeeds is exactly what the eval measures.
 
 ## Try it live

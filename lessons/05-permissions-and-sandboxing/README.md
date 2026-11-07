@@ -129,6 +129,8 @@ uv run pytest lessons/05-permissions-and-sandboxing --impl solutions/05-permissi
 uv run pytest lessons/05-permissions-and-sandboxing --live            # + network-on check
 ```
 
+[TESTING.md](TESTING.md) walks through what each test checks and why.
+
 Lessons 1 to 4 still apply. Tests marked `sandbox` run real bubblewrap and are skipped when it is not usable. They check that:
 
 - a write inside the project works, and a write to `~/.harness_sandbox_probe` fails with `Read-only file system` and leaves no file

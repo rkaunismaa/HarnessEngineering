@@ -70,6 +70,8 @@ uv run pytest lessons/06-the-system-prompt --impl solutions/06-the-system-prompt
 uv run pytest lessons/06-the-system-prompt --live            # + a model follows AGENTS.md
 ```
 
+[TESTING.md](TESTING.md) walks through what each test checks and why.
+
 Lessons 1 to 5 still apply. The tests check, among other things, the environment lines with a fixed date, `AGENTS.md` winning over `CLAUDE.md`, `CLAUDE.md` working alone, no instructions section when neither exists, truncation, `git_summary` in a real temporary repository (untracked file, clean after a commit, detached HEAD, and git missing), and that `extra` comes last. The live test puts `End every answer with the word BANANA.` in `AGENTS.md` and expects the 27B's answer to end with it.
 
 ## Try it live

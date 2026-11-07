@@ -67,6 +67,8 @@ uv run pytest lessons/07-the-terminal                   # against your agent/
 uv run pytest lessons/07-the-terminal --impl solutions/07-the-terminal
 ```
 
+[TESTING.md](TESTING.md) walks through what each test checks and why.
+
 The tests use `to_chunks` from `testing/fake_model.py` to turn a scripted reply into a chunk stream, and raise `KeyboardInterrupt` from a tool function or a chunk iterator to simulate Ctrl-C. `test_live_stream_usage` needs `--live`.
 
 ## Try it live

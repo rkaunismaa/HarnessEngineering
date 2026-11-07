@@ -65,6 +65,8 @@ uv run pytest lessons/03-when-the-model-gets-it-wrong --impl solutions/03-when-t
 uv run pytest lessons/03-when-the-model-gets-it-wrong --live                        # prints a 4B run, see below
 ```
 
+[TESTING.md](TESTING.md) walks through what each test checks and why.
+
 Lessons 1 and 2 still apply. The live test is `test_live_4b_failures`: it needs Ollama with `qwen3:4b-instruct` at `http://localhost:11434/v1` (nothing to configure, it builds its own `Config`). It runs three small tasks and only asserts that each run ends with a known `stop_reason`; its value is the printed log of calls and results. Run it with `-s` to see them.
 
 ## Try it live

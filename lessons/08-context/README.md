@@ -74,6 +74,8 @@ uv run pytest lessons/08-context                   # against your agent/
 uv run pytest lessons/08-context --impl solutions/08-context
 ```
 
+[TESTING.md](TESTING.md) walks through what each test checks and why.
+
 The unit tests build histories by hand; the agent tests use a scripted client where a summary is just another scripted reply (so the number and order of requests in a script is part of the test). `test_live_overflow_message` needs `--live`: it sends about 60K tokens to the 32K model, prints the real error and checks that `is_context_overflow` matches it.
 
 ## Try it live

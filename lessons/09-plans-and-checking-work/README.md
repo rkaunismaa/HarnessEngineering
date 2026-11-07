@@ -71,6 +71,8 @@ uv run pytest lessons/09-plans-and-checking-work                   # against you
 uv run pytest lessons/09-plans-and-checking-work --impl solutions/09-plans-and-checking-work
 ```
 
+[TESTING.md](TESTING.md) walks through what each test checks and why.
+
 The verify tests use a scripted client and a scripted `verify` function, so the number of requests in a script is part of the test. `test_live_uses_todo` needs `--live`: it runs a three-step task on the 27B, asserts only that the run finishes, and prints whether and how often `todo_write` was used.
 
 ## Try it live

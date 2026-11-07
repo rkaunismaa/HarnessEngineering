@@ -74,6 +74,8 @@ uv run pytest lessons/04-editing-files --impl solutions/04-editing-files
 uv run pytest lessons/04-editing-files --live                        # the 27B fixes a typo
 ```
 
+[TESTING.md](TESTING.md) walks through what each test checks and why.
+
 Lessons 1 to 3 still apply. `test_edit_detects_external_change` rewrites a file after the read and moves its mtime forward with `os.utime`; `test_edit_ignores_touch_without_content_change` moves only the mtime. The live test is `test_live_edit`: the model fixes a typo in a temp file using `edit_file`.
 
 ## Try it live

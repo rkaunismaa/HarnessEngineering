@@ -52,6 +52,8 @@ uv run pytest lessons/02-tools --impl solutions/02-tools     # against the refer
 uv run pytest lessons/02-tools --live                        # includes the real-model test
 ```
 
+[TESTING.md](TESTING.md) walks through what each test checks and why.
+
 Lesson 1's tests still apply (one of them was loosened to check that `read_file` is registered, not that it is the only tool).
 
 ## Try it live

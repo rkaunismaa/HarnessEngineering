@@ -72,6 +72,8 @@ uv run pytest lessons/10-subagents                   # against your agent/
 uv run pytest lessons/10-subagents --impl solutions/10-subagents
 ```
 
+[TESTING.md](TESTING.md) walks through what each test checks and why.
+
 The subagent's requests come from the same scripted client as the parent's, in order: a script reads parent, helper, ..., parent, and the tests assert on `client.requests` by position. `test_live_subagent_search` needs `--live`: the 27B is asked to use `subagent` to find where a function is defined and the answer must name the right file. On the reference solution it used one delegation and finished in two parent requests.
 
 ## Try it live
