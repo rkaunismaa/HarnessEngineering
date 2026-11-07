@@ -62,7 +62,7 @@ uv run pytest lessons/00-setup                                # against your age
 uv run pytest lessons/00-setup --impl solutions/00-setup      # against the reference solution
 ```
 
-`--impl PATH` is the directory whose `agent` package the tests import; the default is the repo root, i.e. your code. The tests use `testing/fake_model.py` (`FakeClient`, `reply`, `call`), so no server is needed. The `live` test needs one: add `--live`.
+`--impl PATH` is the directory whose `agent` package the tests import; the default is the repo root, i.e. your code. The tests use `testing/fake_model.py` (`FakeClient`, `reply`, `call`), so no server is needed. The `live` test needs one: add `--live`. [TESTING.md](TESTING.md) walks through how the tests and the fake client work.
 
 ## Try it live
 
