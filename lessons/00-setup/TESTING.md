@@ -2,6 +2,70 @@
 
 Lesson 0's tests have three parts: a switch that picks which `agent/` package is tested, tests of plain functions that take their inputs as arguments, and a fake OpenAI client that returns scripted replies. Against the reference solution, the result is 10 passed and 1 skipped. The skipped one is the live test, which only runs with `--live`.
 
+## First: how pytest runs a file that never calls its own functions
+
+`test_setup.py` is just a series of `def`s, and nothing in it calls them. Pytest finds them by their names and calls them itself.
+
+**Collection: finding the functions by name.** When you run `uv run pytest lessons/00-setup`, pytest goes through these steps:
+
+1. **It walks the folder** you gave it. With no folder given, it walks the `testpaths` listed in `pyproject.toml`: `lessons`, `testing` and `capstone/eval`.
+2. **It picks out files whose names match** `test_*.py` (or `*_test.py`).
+3. **It imports each matching file**, the same way `import` would. That runs the top-level code (the imports and the `def` statements), which creates the functions but doesn't call them.
+4. **It looks in the module for functions whose names start with `test`** and adds each one to its list. A function named anything else is never run. That's why the helpers in later lessons, like `make_agent` and `tools_for`, don't start with `test`.
+
+`--collect-only` shows the list pytest builds without running anything:
+
+```
+$ uv run pytest lessons/00-setup --collect-only -q
+lessons/00-setup/tests/test_setup.py::test_defaults
+lessons/00-setup/tests/test_setup.py::test_env_overrides_file
+...
+lessons/00-setup/tests/test_setup.py::test_live_smoke
+11 tests collected
+```
+
+**Running: one call per function.** Pytest then calls each collected function in turn, roughly like this:
+
+```python
+for test in collected:
+    try:
+        test(**arguments_it_works_out)   # see "fixtures" below
+        report PASSED
+    except AssertionError:
+        report FAILED                    # an assert was false
+    except Exception:
+        report FAILED                    # the code raised something else
+```
+
+A test **passes if it returns without raising**. There's no return value to check. Each `assert` line either does nothing (true) or raises `AssertionError` (false). That's the whole mechanism.
+
+Pytest also rewrites `assert` statements as it imports the file. So when one fails, it can print the values involved (`assert 'a' == 'b'`), not just "AssertionError".
+
+**Where `tmp_path` comes from: fixtures.** `test_env_overrides_file(tmp_path)` takes an argument, and nobody passes it one. Before calling a test, pytest **reads the names of its parameters** and supplies a value for each one it recognizes. These values are called *fixtures*. `tmp_path` is a built-in fixture: pytest creates a new empty folder for this one test and passes its `Path`.
+
+Later lessons use other built-in fixtures the same way:
+
+- `monkeypatch` changes a function or environment variable for one test and undoes it afterwards.
+- `capsys` captures what the test prints.
+
+You can also define your own fixtures with `@pytest.fixture`, as lesson 11 does with `project`.
+
+**Decorators and `conftest.py` change what runs.**
+
+- `@pytest.mark.live` on `test_live_smoke` attaches a label, which by itself does nothing. The root `conftest.py` is a file pytest loads automatically before collecting. Its `pytest_collection_modifyitems` function looks for that label and marks the test as skipped unless you passed `--live`.
+- `@pytest.mark.parametrize(...)`, used from lesson 3 on, makes pytest call one function several times with different arguments. Each call counts as a separate test.
+- `pytest_configure` in the same `conftest.py` handles `--impl`; section 1 below explains it.
+
+**Trying it yourself:**
+
+```
+uv run pytest lessons/00-setup -v                      # one line per test, with PASSED/FAILED
+uv run pytest lessons/00-setup -k smoke                # only tests whose name contains "smoke"
+uv run pytest "lessons/00-setup/tests/test_setup.py::test_defaults"   # just one
+```
+
+A good experiment is to rename `test_defaults` to `check_defaults` and run `--collect-only` again: it disappears from the list. Pytest finds tests only by that naming convention.
+
 ## 1. Which `agent` gets tested
 
 The test file only says `from agent.config import ...` and `from agent.client import ...`. It never names a folder. The root `conftest.py` decides which folder that import finds:
