@@ -103,3 +103,46 @@ In `conftest.py`, `pytest_collection_modifyitems` skips every test marked `live`
 Each function you write gets the things the outside world normally provides (environment variables, the config file, the client) as arguments, and only falls back to the real ones when none are given. The tests use that to swap in fakes, so they run in a fraction of a second with no server.
 
 Every later lesson's tests work the same way. A test scripts the model's replies with `FakeClient`, runs your loop, and then checks two things: what came back, and what your code sent, through `client.requests`. For example, lesson 7 uses `to_chunks(...)` from the same file to turn a scripted reply into a stream of chunks.
+
+## What happens when you run `uv run python -m agent smoke`
+
+The tests above swap in a fake client. This section follows the real command, against LM Studio, from the moment you press Enter.
+
+**1. `uv run` starts Python.** It uses the project's `.venv`, which has `openai` and `rich` installed, and runs it from the repo root.
+
+**2. `python -m agent` runs your package as a program.** Python finds `agent/` in the current folder and runs `agent/__main__.py`. Since that file is run as the main program, the line `if __name__ == "__main__": raise SystemExit(main())` executes. Whatever `main()` returns becomes the process exit code.
+
+**3. `argparse` reads `smoke`.** `build_parser()` registers one subcommand, `smoke`, with `set_defaults(func=_smoke)`. Parsing `["smoke"]` gives an `args` object whose `args.func` is `_smoke`, and `main` calls it. Later lessons add `ask`, `chat` and the others by registering more subcommands the same way.
+
+**4. `load_config()` builds the settings.** It uses the defaults in `Config`, then values from `agent.json` (if you have one), then any `AGENT_*` environment variables. With nothing set, you get `base_url=http://localhost:1234/v1`, `model=qwen/qwen3.8-27b` and `api_key=lm-studio`.
+
+**5. `make_client(config)` creates an `openai.OpenAI` client** pointed at LM Studio instead of OpenAI. Creating the client sends nothing over the network. LM Studio ignores the API key, but the SDK requires one.
+
+**6. `smoke_test` sends one request.** It's a `POST http://localhost:1234/v1/chat/completions` with this body:
+
+```json
+{"model": "qwen/qwen3.8-27b",
+ "messages": [{"role": "user", "content": "Please read the file notes.txt."}],
+ "tools": [{"type": "function", "function": {"name": "read_file", ...}}]}
+```
+
+You can watch this exact request, and the model's reply, in LM Studio's developer log. On the server side:
+
+- LM Studio renders the messages and the tool schema into Qwen's chat template (about 322 prompt tokens in one run).
+- The model generates a reply. Since it was offered a tool, it usually asks to use it.
+- LM Studio turns that into a `tool_calls` entry whose `arguments` is the JSON *string* `'{"path": "notes.txt"}'`.
+
+**7. Your code checks the reply.** It looks for a tool call and parses the arguments with `json.loads`. Then it checks that the result is a dict, that the tool name is `read_file`, and that there's a `path` key. Any check that fails returns `SmokeResult(ok=False, detail=<why>)`.
+
+**8. `_smoke` prints the result and returns the exit code:**
+
+```
+OK: read_file('notes.txt')
+  tool: read_file  arguments: {'path': 'notes.txt'}  prompt tokens: 322
+```
+
+It returns 0 on success and 1 on failure. If the request itself raises (server not running, wrong model name), the `except` prints a `FAIL: could not reach ...` line instead of a traceback. If you see that line, check that LM Studio's server is running: `lms server start`, or the Developer tab in the app.
+
+**Nothing reads `notes.txt`.** The file doesn't need to exist. The smoke test only checks whether the model *asks* to call a tool, in the right format. Nobody runs that call, and no tool result is sent back.
+
+Running the call, sending the result back and asking again until the model gives an answer is the agent loop. You build it in lesson 1.
