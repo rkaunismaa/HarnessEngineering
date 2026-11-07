@@ -81,6 +81,81 @@ Reference run (`qwen/qwen3.8-27b` on LM Studio): two requests, about a second ea
 
 Now open LM Studio's developer log, find the matching request, and locate the rendered prompt. Find where your `read_file` schema appears in it, and where the tool result was placed.
 
+### What happens when you run `ask`, step by step
+
+This follows `uv run python -m agent ask "Read notes.txt and tell me the second line." --root /tmp/scratch1` through the reference solution. Your code should do the same things in the same order.
+
+**1. Startup.** `uv run` starts the project's Python. `python -m agent` runs `agent/__main__.py`, which calls `main()`.
+
+**2. Parsing the command line.** `argparse` matches the subcommand `ask`, takes the quoted text as `args.prompt` and `/tmp/scratch1` as `args.root`, and calls `_ask(args)`. Without `--root`, the default is `.`, the folder you ran the command from.
+
+**3. Building the pieces.** `_ask` builds four objects and hands them to an `Agent`:
+
+```python
+config = load_config()                                   # defaults < agent.json < AGENT_* env vars
+agent = Agent(make_client(config), config.model,         # OpenAI client pointed at LM Studio
+              make_default_tools(Workspace(Path(args.root))),
+              log=RequestLog.for_session(config.log_dir),
+              sampling=config.sampling())
+```
+
+- **The workspace.** `Workspace("/tmp/scratch1")` stores the resolved absolute path. Every path the model gives a tool is joined onto it, so `notes.txt` means `/tmp/scratch1/notes.txt`. (In this lesson that's all it does. A path like `../x` would still get out; lesson 5 closes that.)
+- **The tools.** `make_default_tools` builds a `ToolRegistry` holding one tool, `read_file`. The tool is a closure that remembers the workspace.
+- **The log.** `RequestLog.for_session(".agent/logs")` creates the folder and picks a file name from the current time, such as `.agent/logs/20261107-142530.jsonl`. `log_dir` is relative to the folder you ran the command from (the repo root), not to `--root`. The log stays with the course, and the scratch folder stays clean.
+- **Sampling.** `config.sampling()` is `{}` unless you set `temperature`, `top_p` or `seed`. Then the server's defaults apply.
+- **The history.** `agent.messages` starts empty, because there's no system prompt until lesson 6.
+
+**4. `agent.run(prompt)` adds the user message** to the history. The loop begins.
+
+**5. Request 1.** `_request` sends this to `POST http://localhost:1234/v1/chat/completions`:
+
+```json
+{"model": "qwen/qwen3.8-27b",
+ "messages": [{"role": "user", "content": "Read notes.txt and tell me the second line."}],
+ "tools": [{"type": "function", "function": {"name": "read_file",
+            "description": "Read a text file. Returns numbered lines. ...",
+            "parameters": {"type": "object", "properties": {"path": ..., "offset": ..., "limit": ...},
+                           "required": ["path"]}}}]}
+```
+
+LM Studio renders this into Qwen's chat template, with the tool schema written into the prompt text (382 prompt tokens in the reference run). The model reasons briefly, then asks for the tool. The reply is:
+
+- `finish_reason: "tool_calls"`
+- `content`: empty
+- `reasoning_content`: a sentence or two
+- `tool_calls`: one call, with an id that is a random string from the server, `function.name` of `read_file`, and `function.arguments` of the *string* `'{"path": "notes.txt"}'`
+
+`_request` writes one line to the log: the request it sent, `completion.model_dump()` (reasoning included), and how long the request took.
+
+**6. Back in the loop.** The reply's token counts are added to the running `Usage`, and `turns` becomes 1. `message_to_dict` turns the SDK message into a plain dict, dropping `reasoning_content`, and appends it to the history. The reply has tool calls, so the loop doesn't stop.
+
+**7. Running the tool.** For each call (one here), `_run_tool_call` calls `tools.dispatch("read_file", '{"path": "notes.txt"}')`. That calls `json.loads` on the arguments string, then `read_file(path="notes.txt")`. The tool resolves `/tmp/scratch1/notes.txt`, reads it, and numbers the lines:
+
+```
+     1	alpha
+     2	beta
+     3	gamma
+```
+
+The loop appends `{"role": "tool", "tool_call_id": "<the same id>", "content": "     1\talpha\n     2\tbeta\n     3\tgamma"}`. The id is what tells the model which call this result belongs to. A model may also ask for only the line it needs (`offset=2, limit=1`). The 4B did that in testing, and the result is then just `     2\tbeta`.
+
+**8. Request 2.** The loop goes round again and sends the whole history: the user message, the assistant's tool call, and the tool result. The same tools are sent again; every request is complete on its own, and the server remembers nothing between them. The prompt grew to 439 tokens. This time the model answers in text, along the lines of "The second line of notes.txt is **beta**.", with `finish_reason: "stop"` and no tool calls. A second log line is written.
+
+**9. The loop ends.** The reply has no tool calls, so `run` returns:
+
+```python
+TurnResult(final_text="The second line ... beta ...", stop_reason="done", turns=2,
+           usage=Usage(prompt_tokens=382 + 439, completion_tokens=...), error=None)
+```
+
+`usage` is summed over both requests. The first request's prompt is paid for again inside the second. This is why long sessions get expensive and lesson 8 exists.
+
+**10. Output.** `_ask` prints `final_text` and returns 0. `raise SystemExit(main())` makes that the exit code. The history (`agent.messages`, four messages) disappears when the process exits; only the log file remains.
+
+**Afterwards.** `uv run python -m agent log` finds the newest file in `.agent/logs` and prints one summary per line: agent name, time, duration, message count, token counts, `finish`, the reasoning, and the tool call or content. You'll see the reasoning there even though it was never in the history.
+
+**If the server isn't running,** step 5 raises `openai.APIConnectionError`. In this lesson nothing catches it, so you get a traceback. Lesson 3 turns it into a clean `stop_reason == "error"`.
+
 ## Break it
 
 Run the loop over the real server with part of the protocol removed. Write a throwaway script (not part of the agent) that sends this to the model with `tools=` set:
