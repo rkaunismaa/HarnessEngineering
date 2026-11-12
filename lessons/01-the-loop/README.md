@@ -83,53 +83,227 @@ Now open LM Studio's developer log, find the matching request, and locate the re
 
 ### What happens when you run `ask`, step by step
 
-This follows `uv run python -m agent ask "Read notes.txt and tell me the second line." --root /tmp/scratch1` through the reference solution. Your code should do the same things in the same order.
+This section follows one real run of
 
-**1. Startup.** `uv run` starts the project's Python. `python -m agent` runs `agent/__main__.py`, which calls `main()`.
+```
+uv run python -m agent ask "Read notes.txt and tell me the second line." --root /tmp/scratch1
+```
 
-**2. Parsing the command line.** `argparse` matches the subcommand `ask`, takes the quoted text as `args.prompt` and `/tmp/scratch1` as `args.root`, and calls `_ask(args)`. Without `--root`, the default is `.`, the folder you ran the command from.
+through the reference solution (`solutions/01-the-loop`), against `qwen/qwen3.8-27b` in LM Studio. Every request, reply, id and token count below is copied from that run's log (2026-11-12). Your own run will have a different tool-call id and slightly different wording, but the same shape.
 
-**3. Building the pieces.** `_ask` builds four objects and hands them to an `Agent`:
+#### The big picture first
+
+Three parties are involved, and it helps to keep them apart:
+
+- **You**, at the terminal. You type one command and later see one line of output.
+- **The harness**: your Python code, `python -m agent`. It holds the conversation, runs tools and talks to the server. It is the only party that can touch files.
+- **The model server**: LM Studio, at `http://localhost:1234/v1`. It receives a conversation, runs the model over it, and returns the model's next message. It **remembers nothing between requests**; each request must carry the whole conversation so far.
+
+The model can't read `notes.txt` itself. All it can do is reply "please call `read_file` with `{"path": "notes.txt"}`". So answering this one question takes **two requests**:
+
+```
+ you          harness (your code)                          LM Studio (the model)
+  |  ask "..."   |                                                  |
+  |------------->|  request 1: [user question] + tool list          |
+  |              |------------------------------------------------->|
+  |              |  reply 1: "call read_file(notes.txt)"            |
+  |              |<-------------------------------------------------|
+  |              |  runs read_file itself, gets the file text       |
+  |              |  request 2: [question, call, file text] + tools  |
+  |              |------------------------------------------------->|
+  |              |  reply 2: "The second line ... is beta."         |
+  |              |<-------------------------------------------------|
+  |  prints it   |                                                  |
+  |<-------------|                                                  |
+```
+
+That repeat ("send, run any tools it asked for, send again") is the **loop**. Here is the reference loop, with the step numbers used below:
 
 ```python
-config = load_config()                                   # defaults < agent.json < AGENT_* env vars
-agent = Agent(make_client(config), config.model,         # OpenAI client pointed at LM Studio
+def run(self, user_message: str) -> TurnResult:
+    self.messages.append({"role": "user", "content": user_message})          # step 4
+    usage = Usage()
+    turns = 0
+    while True:
+        completion = self._request()                                          # steps 5 and 8
+        turns += 1
+        if completion.usage:
+            usage += Usage(completion.usage.prompt_tokens, completion.usage.completion_tokens)
+        message = completion.choices[0].message
+        self.messages.append(message_to_dict(message))                       # step 6
+        if not message.tool_calls:                                            # step 9: no calls -> done
+            return TurnResult(message.content or "", "done", turns, usage)
+        for tc in message.tool_calls:                                         # step 7
+            self.messages.append({"role": "tool", "tool_call_id": tc.id,
+                                  "content": self._run_tool_call(tc)})
+
+def _request(self):
+    kwargs = {"model": self.model, "messages": self.messages,
+              "tools": self.tools.schemas(), **self.sampling}
+    start = time.monotonic()
+    completion = self.client.chat.completions.create(**kwargs)               # the HTTP request
+    if self.log:
+        self.log.record(kwargs, completion.model_dump(), time.monotonic() - start)
+    return completion
+
+def _run_tool_call(self, tool_call) -> str:
+    fn = tool_call.function
+    return self.tools.dispatch(fn.name, fn.arguments)
+```
+
+Keep one variable in mind throughout: **`self.messages`**, the conversation history. It's a plain Python list of dicts, and the whole run is really just that list growing from one message to four.
+
+#### Step 1. Python starts and finds your package
+
+- `uv run` makes sure the project's virtual environment (`.venv`, with `openai` and `rich` installed) exists and is up to date, then runs the rest of the command with that environment's Python.
+- `python -m agent` means "run the package `agent` as a program". Python looks for a folder called `agent/` in the current directory (that's why you run from the repo root), and runs the file `agent/__main__.py` inside it.
+- At the bottom of that file, `raise SystemExit(main())` calls `main()`. Whatever number `main()` returns becomes the process's exit code (0 means success).
+
+#### Step 2. `argparse` works out what you asked for
+
+`main()` builds a parser with three subcommands (`smoke`, `ask`, `log`) and gives it the words after `agent`:
+
+```
+["ask", "Read notes.txt and tell me the second line.", "--root", "/tmp/scratch1"]
+```
+
+The shell has already removed the quotes, so the question arrives as **one** word. The parser matches `ask`, and produces an object holding the results:
+
+```python
+args.prompt == "Read notes.txt and tell me the second line."
+args.root   == "/tmp/scratch1"         # default "." if you leave --root out
+args.func   == _ask                    # set by ask.set_defaults(func=_ask)
+```
+
+`main()` then calls `args.func(args)`, which is `_ask(args)`. This "store the function to call" trick is how one `main()` serves every subcommand.
+
+#### Step 3. `_ask` builds the pieces and connects them
+
+```python
+config = load_config()
+agent = Agent(make_client(config), config.model,
               make_default_tools(Workspace(Path(args.root))),
               log=RequestLog.for_session(config.log_dir),
               sampling=config.sampling())
 ```
 
-- **The workspace.** `Workspace("/tmp/scratch1")` stores the resolved absolute path. Every path the model gives a tool is joined onto it, so `notes.txt` means `/tmp/scratch1/notes.txt`. (In this lesson that's all it does. A path like `../x` would still get out; lesson 5 closes that.)
-- **The tools.** `make_default_tools` builds a `ToolRegistry` holding one tool, `read_file`. The tool is a closure that remembers the workspace.
-- **The log.** `RequestLog.for_session(".agent/logs")` creates the folder and picks a file name from the current time, such as `.agent/logs/20261107-142530.jsonl`. `log_dir` is relative to the folder you ran the command from (the repo root), not to `--root`. The log stays with the course, and the scratch folder stays clean.
-- **Sampling.** `config.sampling()` is `{}` unless you set `temperature`, `top_p` or `seed`. Then the server's defaults apply.
-- **The history.** `agent.messages` starts empty, because there's no system prompt until lesson 6.
+Read it inside out:
 
-**4. `agent.run(prompt)` adds the user message** to the history. The loop begins.
+- **`load_config()`** starts from the defaults in `Config`, applies `agent.json` if it exists, then any `AGENT_*` environment variables. With nothing set: `base_url="http://localhost:1234/v1"`, `model="qwen/qwen3.8-27b"`, `api_key="lm-studio"`, `log_dir=.agent/logs`.
+- **`make_client(config)`** creates `openai.OpenAI(base_url=..., api_key=...)`. This is the official OpenAI library, pointed at LM Studio instead of OpenAI's servers. **Creating it sends nothing.** It only stores where to send requests later. LM Studio ignores the key, but the library insists on one.
+- **`Workspace(Path("/tmp/scratch1"))`** stores the folder as an absolute path in `ws.root`. Its `resolve("notes.txt")` returns `/tmp/scratch1/notes.txt`. This is how a relative path from the model becomes a real file. (In this lesson, nothing stops `../something` from leaving the folder; lesson 5 adds that.)
+- **`make_default_tools(ws)`** creates a `ToolRegistry`, a small dict-like object from tool names to `Tool` objects, and registers one tool, `read_file`. `read_file` is defined *inside* `make_read_file(ws)`, so it can use `ws` later without being passed it. A function that remembers a variable from where it was defined is called a **closure**.
+- **`RequestLog.for_session(".agent/logs")`** creates the `.agent/logs` folder if needed and picks a file name from the current time (this run: `20261112-090820.jsonl`). Nothing is written yet. The path is relative to the folder you ran the command from (the repo root), not to `--root`, so logs collect in the course repo and the scratch project stays clean.
+- **`config.sampling()`** returns `{}` here, because no `temperature`, `top_p` or `seed` is set. An empty dict adds nothing to the requests, so LM Studio uses its own defaults.
+- **`Agent(...)`** just stores all of these on `self`. No `system` was given, so the history starts empty:
 
-**5. Request 1.** `_request` sends this to `POST http://localhost:1234/v1/chat/completions`:
-
-```json
-{"model": "qwen/qwen3.8-27b",
- "messages": [{"role": "user", "content": "Read notes.txt and tell me the second line."}],
- "tools": [{"type": "function", "function": {"name": "read_file",
-            "description": "Read a text file. Returns numbered lines. ...",
-            "parameters": {"type": "object", "properties": {"path": ..., "offset": ..., "limit": ...},
-                           "required": ["path"]}}}]}
+```python
+self.messages == []
 ```
 
-LM Studio renders this into Qwen's chat template, with the tool schema written into the prompt text (382 prompt tokens in the reference run). The model reasons briefly, then asks for the tool. The reply is:
+#### Step 4. The question goes into the history
 
-- `finish_reason: "tool_calls"`
-- `content`: empty
-- `reasoning_content`: a sentence or two
-- `tool_calls`: one call, with an id that is a random string from the server, `function.name` of `read_file`, and `function.arguments` of the *string* `'{"path": "notes.txt"}'`
+`_ask` calls `agent.run("Read notes.txt and tell me the second line.")`. The first line of `run` appends the question:
 
-`_request` writes one line to the log: the request it sent, `completion.model_dump()` (reasoning included), and how long the request took.
+```python
+self.messages == [
+    {"role": "user", "content": "Read notes.txt and tell me the second line."},
+]
+```
 
-**6. Back in the loop.** The reply's token counts are added to the running `Usage`, and `turns` becomes 1. `message_to_dict` turns the SDK message into a plain dict, dropping `reasoning_content`, and appends it to the history. The reply has tool calls, so the loop doesn't stop.
+`usage` starts at zero and `turns` at 0. Then the `while True:` loop starts.
 
-**7. Running the tool.** For each call (one here), `_run_tool_call` calls `tools.dispatch("read_file", '{"path": "notes.txt"}')`. That calls `json.loads` on the arguments string, then `read_file(path="notes.txt")`. The tool resolves `/tmp/scratch1/notes.txt`, reads it, and numbers the lines:
+#### Step 5. Request 1: the harness asks the model
+
+`_request` builds the keyword arguments and passes them to `client.chat.completions.create(**kwargs)`. The library turns them into JSON and sends an HTTP `POST` to `http://localhost:1234/v1/chat/completions`. This is the request body from the log:
+
+```json
+{
+  "model": "qwen/qwen3.8-27b",
+  "messages": [
+    {"role": "user", "content": "Read notes.txt and tell me the second line."}
+  ],
+  "tools": [
+    {"type": "function",
+     "function": {
+       "name": "read_file",
+       "description": "Read a text file. Returns numbered lines. Use offset (1-based line) and limit to read part of a large file.",
+       "parameters": {
+         "type": "object",
+         "properties": {
+           "path":   {"type": "string",  "description": "File path"},
+           "offset": {"type": "integer", "description": "First line to read (1-based)"},
+           "limit":  {"type": "integer", "description": "Maximum number of lines"}
+         },
+         "required": ["path"]}}}
+  ]
+}
+```
+
+The `tools` list comes from `tools.schemas()`. It is a *description* of the tool (its name, what it does and what arguments it takes, as a JSON Schema), not the tool itself. The model only ever sees this description. Your Python function stays on your machine.
+
+**What LM Studio does with it:** it feeds `messages` and `tools` into the model's **chat template**, which writes them out as one long piece of text with special markers. That text was **382 tokens** long. The model reads it and generates a reply. Qwen thinks first, in a separate field. The call blocks (waits) until the reply is complete; this one took **0.99 s**.
+
+**What comes back:** the library turns the JSON reply into a Python object, `completion`. The part that matters is `completion.choices[0]`:
+
+```json
+{
+  "finish_reason": "tool_calls",
+  "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning_content": "The user is asking to read notes.txt and report the second line. Let me try reading the file.",
+    "tool_calls": [
+      {"id": "M3euI7RG61SZicwVEeGrNh1XcHvZMiLS",
+       "type": "function",
+       "function": {"name": "read_file", "arguments": "{\"path\":\"notes.txt\"}"}}
+    ]
+  }
+}
+```
+
+and `completion.usage` is `prompt_tokens=382, completion_tokens=50`. Of those 50, 21 were reasoning. Points to notice:
+
+- **`finish_reason: "tool_calls"`** means the model stopped because it wants a tool run.
+- **`content` is `""`.** There's no text for you yet.
+- **`arguments` is a string**, `"{\"path\":\"notes.txt\"}"`: JSON text inside JSON, not a dict. The harness must parse it.
+- **The `id`** is a random string LM Studio made up. The harness must quote it back with the result.
+- **`reasoning_content`** is the model's thinking. It's useful to read, but it won't be put into the history.
+
+Before returning, `_request` writes the first log line: the request dict, `completion.model_dump()` (the whole reply object converted to plain dicts, reasoning included), and the duration.
+
+#### Step 6. The model's reply goes into the history
+
+Back in `run`: `turns` becomes 1, and the token counts are added to `usage`. Then `message_to_dict(message)` copies the parts of the reply worth keeping into a plain dict: `role`, `content`, and `tool_calls` with exactly `id`, `type`, `name` and `arguments`. It leaves out `reasoning_content` and the reply's other empty fields (`refusal`, `audio`, and so on). The history now holds two messages:
+
+```python
+self.messages == [
+    {"role": "user", "content": "Read notes.txt and tell me the second line."},
+    {"role": "assistant", "content": "",
+     "tool_calls": [{"id": "M3euI7RG61SZicwVEeGrNh1XcHvZMiLS", "type": "function",
+                     "function": {"name": "read_file", "arguments": "{\"path\":\"notes.txt\"}"}}]},
+]
+```
+
+Why a plain dict and not the library's object? The history is sent back to the server next time, and written to logs. Plain dicts make that, and testing, simple.
+
+`message.tool_calls` is not empty, so `if not message.tool_calls` is false and the loop does **not** return.
+
+#### Step 7. The harness runs the tool
+
+For each tool call (one here), `_run_tool_call(tc)` calls:
+
+```python
+self.tools.dispatch("read_file", "{\"path\":\"notes.txt\"}")
+```
+
+`dispatch` does three small things:
+
+1. `tool = self.get("read_file")` finds the `Tool` object by name.
+2. `args = json.loads('{"path":"notes.txt"}')` turns the string into the dict `{"path": "notes.txt"}`.
+3. `tool.fn(**args)` calls the function with those as keyword arguments, so it is exactly `read_file(path="notes.txt")`. `offset` and `limit` keep their defaults, 1 and 2000.
+
+Inside `read_file`, `ws.resolve("notes.txt")` gives `/tmp/scratch1/notes.txt`. The file exists, so it is read and split into lines: `["alpha", "beta", "gamma"]`. Each line gets a right-aligned number and a tab (`f"{n:>6}\t{line}"`), and the lines are joined with newlines:
 
 ```
      1	alpha
@@ -137,24 +311,112 @@ LM Studio renders this into Qwen's chat template, with the tool schema written i
      3	gamma
 ```
 
-The loop appends `{"role": "tool", "tool_call_id": "<the same id>", "content": "     1\talpha\n     2\tbeta\n     3\tgamma"}`. The id is what tells the model which call this result belongs to. A model may also ask for only the line it needs (`offset=2, limit=1`). The 4B did that in testing, and the result is then just `     2\tbeta`.
-
-**8. Request 2.** The loop goes round again and sends the whole history: the user message, the assistant's tool call, and the tool result. The same tools are sent again; every request is complete on its own, and the server remembers nothing between them. The prompt grew to 439 tokens. This time the model answers in text, along the lines of "The second line of notes.txt is **beta**.", with `finish_reason: "stop"` and no tool calls. A second log line is written.
-
-**9. The loop ends.** The reply has no tool calls, so `run` returns:
+The numbers let the model, and later the edit tool, talk about "line 2" reliably. The loop wraps the result in a `tool` message carrying **the same id** as the call, and appends it:
 
 ```python
-TurnResult(final_text="The second line ... beta ...", stop_reason="done", turns=2,
-           usage=Usage(prompt_tokens=382 + 439, completion_tokens=...), error=None)
+self.messages == [
+    {"role": "user", ...},
+    {"role": "assistant", "content": "", "tool_calls": [{"id": "M3euI7RG...", ...}]},
+    {"role": "tool", "tool_call_id": "M3euI7RG61SZicwVEeGrNh1XcHvZMiLS",
+     "content": "     1\talpha\n     2\tbeta\n     3\tgamma"},
+]
 ```
 
-`usage` is summed over both requests. The first request's prompt is paid for again inside the second. This is why long sessions get expensive and lesson 8 exists.
+The id pairing is how the model knows which result belongs to which call. With two calls in one reply, it's the only way to tell them apart. If a tool call is left without an answer, the server rejects the next request with a 400 error (see "Break it" below).
 
-**10. Output.** `_ask` prints `final_text` and returns 0. `raise SystemExit(main())` makes that the exit code. The history (`agent.messages`, four messages) disappears when the process exits; only the log file remains.
+The `for` loop ends and the `while True:` loop goes round again.
 
-**Afterwards.** `uv run python -m agent log` finds the newest file in `.agent/logs` and prints one summary per line: agent name, time, duration, message count, token counts, `finish`, the reasoning, and the tool call or content. You'll see the reasoning there even though it was never in the history.
+#### Step 8. Request 2: same question, more history
 
-**If the server isn't running,** step 5 raises `openai.APIConnectionError`. In this lesson nothing catches it, so you get a traceback. Lesson 3 turns it into a clean `stop_reason == "error"`.
+`_request` runs again. It builds the same kind of request, but `messages` is now the three-message list from step 7, and the `tools` list is sent again unchanged. The server keeps no memory of request 1: everything the model needs to know has to be in this request. That includes the original question, the fact that it asked for `read_file`, and the result.
+
+The rendered prompt is now **439 tokens** (382 before, plus the tool call and the file text). The model reads it and answers in text, taking **0.945 s**:
+
+```json
+{
+  "finish_reason": "stop",
+  "message": {
+    "role": "assistant",
+    "content": "The second line of notes.txt is **beta**.",
+    "reasoning_content": "The user asked for the second line of notes.txt. I read the file. The second line is \"beta\". I should give a brief answer.",
+    "tool_calls": []
+  }
+}
+```
+
+with `prompt_tokens=439, completion_tokens=44` (30 of them reasoning). **`finish_reason: "stop"`** means the model finished on its own. `tool_calls` is an empty list here (another server might send `None`); `if not message.tool_calls` treats both as "no calls". A second line is written to the log.
+
+#### Step 9. No tool calls, so the loop ends
+
+`turns` becomes 2, `usage` is updated, and the reply goes into the history, which now has its final four messages:
+
+```python
+self.messages == [
+    {"role": "user", "content": "Read notes.txt and tell me the second line."},
+    {"role": "assistant", "content": "", "tool_calls": [...read_file...]},
+    {"role": "tool", "tool_call_id": "M3euI7RG...", "content": "     1\talpha\n..."},
+    {"role": "assistant", "content": "The second line of notes.txt is **beta**."},
+]
+```
+
+This time `message.tool_calls` is empty, so `run` returns:
+
+```python
+TurnResult(final_text="The second line of notes.txt is **beta**.",
+           stop_reason="done", turns=2,
+           usage=Usage(prompt_tokens=821, completion_tokens=94), error=None)
+```
+
+`prompt_tokens` is 382 + 439 = 821. The first request's text was processed twice: once on its own, and again inside the second request. That's the price of a server that remembers nothing. It grows with every turn of a long session, which is what lesson 8 deals with.
+
+#### Step 10. The answer is printed and the program ends
+
+`_ask` prints `result.final_text`:
+
+```
+The second line of notes.txt is **beta**.
+```
+
+The `**` is Markdown bold. The model writes Markdown, and `ask` prints the raw text; lesson 7 renders it. `_ask` returns 0, `main()` returns it, and `SystemExit(0)` ends the process with exit code 0.
+
+When the process ends, the `Agent` object and its history are gone. **Only the log file remains.** Every `ask` starts a fresh conversation. (Lesson 7's `chat` keeps one `Agent` alive between questions instead.)
+
+#### Afterwards: reading the log
+
+`uv run python -m agent log` finds the newest file in `.agent/logs`. It reads it line by line and prints a summary of each request with `format_entry`. For this run:
+
+```
+[main] 2026-11-12T09:08:21.619171  0.99s  1 messages  prompt=382 completion=50  finish=tool_calls
+  reasoning: The user is asking to read notes.txt and report the second line. Let me try reading the file.
+  tool call M3euI7RG61SZicwVEeGrNh1XcHvZMiLS: read_file({"path":"notes.txt"})
+[main] 2026-11-12T09:08:22.564440  0.945s  3 messages  prompt=439 completion=44  finish=stop
+  reasoning: The user asked for the second line of notes.txt. I read the file. The second line is "beta". I should give a brief answer.
+  content: The second line of notes.txt is **beta**.
+```
+
+Each block is one request. "1 messages" and "3 messages" are how long the history was when that request was sent. The reasoning shows up here, though it was never sent back to the model. The log is the only place it's kept.
+
+#### If something goes wrong
+
+- **LM Studio's server isn't running:** step 5 raises `openai.APIConnectionError`. Nothing in lesson 1 catches it, so you see a traceback. Lesson 3 turns it into `stop_reason == "error"` with a readable message. To fix it: `lms server start`, or the Developer tab in LM Studio.
+- **The model asks for a file that doesn't exist:** `read_file` returns the *string* `Error: file not found: <path>` as the tool result. The model reads that and usually says so in its answer. It's not an exception; telling the model what went wrong is better than crashing.
+- **The model asks for only part of the file:** `{"path": "notes.txt", "offset": 2, "limit": 1}` is valid, and the result is just `     2\tbeta`. The 4B model did this in testing.
+
+#### Words used above
+
+| Term | Meaning here |
+|---|---|
+| **request / reply** | One HTTP call to LM Studio and its answer. One `ask` can make several. |
+| **turn** | One request plus its reply. This run had 2. |
+| **history** (`self.messages`) | The list of messages so far, sent in full with every request. |
+| **tool schema** | The JSON description of a tool (name, description, parameters) sent to the model so it knows the tool exists. |
+| **tool call** | The model's request to run a tool: a name, an arguments string and an id. |
+| **tool result** | The `role: "tool"` message the harness sends back, with the call's id. |
+| **chat template** | The model's own recipe for turning messages and tools into one prompt text. The server applies it; your code never sees it (LM Studio's developer log does show it). |
+| **token** | The unit models read and write; very roughly ¾ of a word. **Prompt tokens** are what the model read; **completion tokens** are what it wrote, reasoning included. |
+| **`finish_reason`** | Why the model stopped: `tool_calls` (wants a tool), `stop` (finished), `length` (ran out of room). |
+| **`model_dump()`** | A method on the library's reply object that converts it into plain dicts and lists, so it can be saved as JSON. |
+| **closure** | A function that remembers variables from where it was defined. `read_file` remembers `ws`. |
 
 ## Break it
 
