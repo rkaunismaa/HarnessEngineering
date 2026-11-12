@@ -91,6 +91,23 @@ uv run python -m agent ask "Read notes.txt and tell me the second line." --root 
 
 through the reference solution (`solutions/01-the-loop`), against `qwen/qwen3.8-27b` in LM Studio. Every request, reply, id and token count below is copied from that run's log (2026-11-12). Your own run will have a different tool-call id and slightly different wording, but the same shape.
 
+#### Where the code lives
+
+Every function named below is in one of these files. The paths are relative to your `agent/` package; the reference versions are the same files under `solutions/01-the-loop/agent/`.
+
+| File | Functions and classes used in this walkthrough |
+|---|---|
+| `agent/__main__.py` | `main`, `build_parser`, `_ask`, `_log` |
+| `agent/config.py` | `Config`, `load_config`, `Config.sampling` |
+| `agent/client.py` | `make_client` |
+| `agent/workspace.py` | `Workspace`, `Workspace.resolve` |
+| `agent/tools/__init__.py` | `make_default_tools` |
+| `agent/tools/files.py` | `make_read_file`, and the `read_file` function defined inside it |
+| `agent/tools/registry.py` | `Tool`, `ToolRegistry`, `ToolRegistry.get`, `ToolRegistry.schemas`, `ToolRegistry.dispatch` |
+| `agent/loop.py` | `Agent`, `Agent.run`, `Agent._request`, `Agent._run_tool_call`, `TurnResult` |
+| `agent/messages.py` | `message_to_dict`, `Usage` |
+| `agent/log.py` | `RequestLog`, `RequestLog.for_session`, `RequestLog.record`, `read_log`, `latest_log`, `format_entry` |
+
 #### The big picture first
 
 Three parties are involved, and it helps to keep them apart:
@@ -117,9 +134,10 @@ The model can't read `notes.txt` itself. All it can do is reply "please call `re
   |<-------------|                                                  |
 ```
 
-That repeat ("send, run any tools it asked for, send again") is the **loop**. Here is the reference loop, with the step numbers used below:
+That repeat ("send, run any tools it asked for, send again") is the **loop**. Here is the reference loop from `agent/loop.py` (methods of the `Agent` class), with the step numbers used below:
 
 ```python
+# agent/loop.py, class Agent
 def run(self, user_message: str) -> TurnResult:
     self.messages.append({"role": "user", "content": user_message})          # step 4
     usage = Usage()
@@ -157,11 +175,11 @@ Keep one variable in mind throughout: **`self.messages`**, the conversation hist
 
 - `uv run` makes sure the project's virtual environment (`.venv`, with `openai` and `rich` installed) exists and is up to date, then runs the rest of the command with that environment's Python.
 - `python -m agent` means "run the package `agent` as a program". Python looks for a folder called `agent/` in the current directory (that's why you run from the repo root), and runs the file `agent/__main__.py` inside it.
-- At the bottom of that file, `raise SystemExit(main())` calls `main()`. Whatever number `main()` returns becomes the process's exit code (0 means success).
+- At the bottom of that file, `raise SystemExit(main())` calls `main()` (also in `agent/__main__.py`). Whatever number `main()` returns becomes the process's exit code (0 means success).
 
 #### Step 2. `argparse` works out what you asked for
 
-`main()` builds a parser with three subcommands (`smoke`, `ask`, `log`) and gives it the words after `agent`:
+`main()` calls `build_parser()` (both in `agent/__main__.py`), which builds a parser with three subcommands (`smoke`, `ask`, `log`) and gives it the words after `agent`:
 
 ```
 ["ask", "Read notes.txt and tell me the second line.", "--root", "/tmp/scratch1"]
@@ -175,11 +193,12 @@ args.root   == "/tmp/scratch1"         # default "." if you leave --root out
 args.func   == _ask                    # set by ask.set_defaults(func=_ask)
 ```
 
-`main()` then calls `args.func(args)`, which is `_ask(args)`. This "store the function to call" trick is how one `main()` serves every subcommand.
+`main()` then calls `args.func(args)`, which is `_ask(args)`, defined in `agent/__main__.py`. This "store the function to call" trick is how one `main()` serves every subcommand.
 
 #### Step 3. `_ask` builds the pieces and connects them
 
 ```python
+# agent/__main__.py, inside _ask
 config = load_config()
 agent = Agent(make_client(config), config.model,
               make_default_tools(Workspace(Path(args.root))),
@@ -189,13 +208,13 @@ agent = Agent(make_client(config), config.model,
 
 Read it inside out:
 
-- **`load_config()`** starts from the defaults in `Config`, applies `agent.json` if it exists, then any `AGENT_*` environment variables. With nothing set: `base_url="http://localhost:1234/v1"`, `model="qwen/qwen3.8-27b"`, `api_key="lm-studio"`, `log_dir=.agent/logs`.
-- **`make_client(config)`** creates `openai.OpenAI(base_url=..., api_key=...)`. This is the official OpenAI library, pointed at LM Studio instead of OpenAI's servers. **Creating it sends nothing.** It only stores where to send requests later. LM Studio ignores the key, but the library insists on one.
-- **`Workspace(Path("/tmp/scratch1"))`** stores the folder as an absolute path in `ws.root`. Its `resolve("notes.txt")` returns `/tmp/scratch1/notes.txt`. This is how a relative path from the model becomes a real file. (In this lesson, nothing stops `../something` from leaving the folder; lesson 5 adds that.)
-- **`make_default_tools(ws)`** creates a `ToolRegistry`, a small dict-like object from tool names to `Tool` objects, and registers one tool, `read_file`. `read_file` is defined *inside* `make_read_file(ws)`, so it can use `ws` later without being passed it. A function that remembers a variable from where it was defined is called a **closure**.
-- **`RequestLog.for_session(".agent/logs")`** creates the `.agent/logs` folder if needed and picks a file name from the current time (this run: `20261112-090820.jsonl`). Nothing is written yet. The path is relative to the folder you ran the command from (the repo root), not to `--root`, so logs collect in the course repo and the scratch project stays clean.
-- **`config.sampling()`** returns `{}` here, because no `temperature`, `top_p` or `seed` is set. An empty dict adds nothing to the requests, so LM Studio uses its own defaults.
-- **`Agent(...)`** just stores all of these on `self`. No `system` was given, so the history starts empty:
+- **`load_config()`** (`agent/config.py`) starts from the defaults in `Config`, applies `agent.json` if it exists, then any `AGENT_*` environment variables. With nothing set: `base_url="http://localhost:1234/v1"`, `model="qwen/qwen3.8-27b"`, `api_key="lm-studio"`, `log_dir=.agent/logs`.
+- **`make_client(config)`** (`agent/client.py`) creates `openai.OpenAI(base_url=..., api_key=...)`. This is the official OpenAI library, pointed at LM Studio instead of OpenAI's servers. **Creating it sends nothing.** It only stores where to send requests later. LM Studio ignores the key, but the library insists on one.
+- **`Workspace(Path("/tmp/scratch1"))`** (`agent/workspace.py`) stores the folder as an absolute path in `ws.root`. Its `resolve("notes.txt")` returns `/tmp/scratch1/notes.txt`. This is how a relative path from the model becomes a real file. (In this lesson, nothing stops `../something` from leaving the folder; lesson 5 adds that.)
+- **`make_default_tools(ws)`** (`agent/tools/__init__.py`) creates a `ToolRegistry` (`agent/tools/registry.py`), a small dict-like object from tool names to `Tool` objects, and registers one tool, `read_file`. `read_file` is defined *inside* `make_read_file(ws)` in `agent/tools/files.py`, so it can use `ws` later without being passed it. A function that remembers a variable from where it was defined is called a **closure**.
+- **`RequestLog.for_session(".agent/logs")`** (`agent/log.py`) creates the `.agent/logs` folder if needed and picks a file name from the current time (this run: `20261112-090820.jsonl`). Nothing is written yet. The path is relative to the folder you ran the command from (the repo root), not to `--root`, so logs collect in the course repo and the scratch project stays clean.
+- **`config.sampling()`** (a method of `Config`, in `agent/config.py`) returns `{}` here, because no `temperature`, `top_p` or `seed` is set. An empty dict adds nothing to the requests, so LM Studio uses its own defaults.
+- **`Agent(...)`** (`agent/loop.py`) just stores all of these on `self`. No `system` was given, so the history starts empty:
 
 ```python
 self.messages == []
@@ -203,7 +222,7 @@ self.messages == []
 
 #### Step 4. The question goes into the history
 
-`_ask` calls `agent.run("Read notes.txt and tell me the second line.")`. The first line of `run` appends the question:
+`_ask` calls `agent.run("Read notes.txt and tell me the second line.")`. The first line of `Agent.run` (`agent/loop.py`) appends the question:
 
 ```python
 self.messages == [
@@ -215,7 +234,7 @@ self.messages == [
 
 #### Step 5. Request 1: the harness asks the model
 
-`_request` builds the keyword arguments and passes them to `client.chat.completions.create(**kwargs)`. The library turns them into JSON and sends an HTTP `POST` to `http://localhost:1234/v1/chat/completions`. This is the request body from the log:
+`Agent._request` (`agent/loop.py`) builds the keyword arguments and passes them to `client.chat.completions.create(**kwargs)`. The library turns them into JSON and sends an HTTP `POST` to `http://localhost:1234/v1/chat/completions`. This is the request body from the log:
 
 ```json
 {
@@ -240,7 +259,7 @@ self.messages == [
 }
 ```
 
-The `tools` list comes from `tools.schemas()`. It is a *description* of the tool (its name, what it does and what arguments it takes, as a JSON Schema), not the tool itself. The model only ever sees this description. Your Python function stays on your machine.
+The `tools` list comes from `ToolRegistry.schemas()` in `agent/tools/registry.py`. It is a *description* of the tool (its name, what it does and what arguments it takes, as a JSON Schema), not the tool itself. The model only ever sees this description. Your Python function stays on your machine.
 
 **What LM Studio does with it:** it feeds `messages` and `tools` into the model's **chat template**, which writes them out as one long piece of text with special markers. That text was **382 tokens** long. The model reads it and generates a reply. Qwen thinks first, in a separate field. The call blocks (waits) until the reply is complete; this one took **0.99 s**.
 
@@ -270,11 +289,11 @@ and `completion.usage` is `prompt_tokens=382, completion_tokens=50`. Of those 50
 - **The `id`** is a random string LM Studio made up. The harness must quote it back with the result.
 - **`reasoning_content`** is the model's thinking. It's useful to read, but it won't be put into the history.
 
-Before returning, `_request` writes the first log line: the request dict, `completion.model_dump()` (the whole reply object converted to plain dicts, reasoning included), and the duration.
+Before returning, `_request` writes the first log line by calling `RequestLog.record` (`agent/log.py`): the request dict, `completion.model_dump()` (the whole reply object converted to plain dicts, reasoning included), and the duration.
 
 #### Step 6. The model's reply goes into the history
 
-Back in `run`: `turns` becomes 1, and the token counts are added to `usage`. Then `message_to_dict(message)` copies the parts of the reply worth keeping into a plain dict: `role`, `content`, and `tool_calls` with exactly `id`, `type`, `name` and `arguments`. It leaves out `reasoning_content` and the reply's other empty fields (`refusal`, `audio`, and so on). The history now holds two messages:
+Back in `run`: `turns` becomes 1, and the token counts are added to `usage`. Then `message_to_dict(message)` (`agent/messages.py`) copies the parts of the reply worth keeping into a plain dict: `role`, `content`, and `tool_calls` with exactly `id`, `type`, `name` and `arguments`. It leaves out `reasoning_content` and the reply's other empty fields (`refusal`, `audio`, and so on). The history now holds two messages:
 
 ```python
 self.messages == [
@@ -291,19 +310,19 @@ Why a plain dict and not the library's object? The history is sent back to the s
 
 #### Step 7. The harness runs the tool
 
-For each tool call (one here), `_run_tool_call(tc)` calls:
+For each tool call (one here), `Agent._run_tool_call(tc)` (`agent/loop.py`) calls:
 
 ```python
 self.tools.dispatch("read_file", "{\"path\":\"notes.txt\"}")
 ```
 
-`dispatch` does three small things:
+`ToolRegistry.dispatch` (`agent/tools/registry.py`) does three small things:
 
 1. `tool = self.get("read_file")` finds the `Tool` object by name.
 2. `args = json.loads('{"path":"notes.txt"}')` turns the string into the dict `{"path": "notes.txt"}`.
 3. `tool.fn(**args)` calls the function with those as keyword arguments, so it is exactly `read_file(path="notes.txt")`. `offset` and `limit` keep their defaults, 1 and 2000.
 
-Inside `read_file`, `ws.resolve("notes.txt")` gives `/tmp/scratch1/notes.txt`. The file exists, so it is read and split into lines: `["alpha", "beta", "gamma"]`. Each line gets a right-aligned number and a tab (`f"{n:>6}\t{line}"`), and the lines are joined with newlines:
+Inside `read_file` (`agent/tools/files.py`), `ws.resolve("notes.txt")` (`agent/workspace.py`) gives `/tmp/scratch1/notes.txt`. The file exists, so it is read and split into lines: `["alpha", "beta", "gamma"]`. Each line gets a right-aligned number and a tab (`f"{n:>6}\t{line}"`), and the lines are joined with newlines:
 
 ```
      1	alpha
@@ -359,7 +378,7 @@ self.messages == [
 ]
 ```
 
-This time `message.tool_calls` is empty, so `run` returns:
+This time `message.tool_calls` is empty, so `run` returns a `TurnResult` (defined in `agent/loop.py`; `Usage` is in `agent/messages.py`):
 
 ```python
 TurnResult(final_text="The second line of notes.txt is **beta**.",
@@ -383,7 +402,7 @@ When the process ends, the `Agent` object and its history are gone. **Only the l
 
 #### Afterwards: reading the log
 
-`uv run python -m agent log` finds the newest file in `.agent/logs`. It reads it line by line and prints a summary of each request with `format_entry`. For this run:
+`uv run python -m agent log` runs `_log` in `agent/__main__.py`. It finds the newest file in `.agent/logs` with `latest_log`, reads it with `read_log`, and prints a summary of each request with `format_entry` (all three in `agent/log.py`). For this run:
 
 ```
 [main] 2026-11-12T09:08:21.619171  0.99s  1 messages  prompt=382 completion=50  finish=tool_calls

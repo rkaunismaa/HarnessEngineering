@@ -226,17 +226,25 @@ Every later lesson's tests work the same way. A test scripts the model's replies
 
 The tests above swap in a fake client. This section follows the real command, against LM Studio, from the moment you press Enter.
 
+**Where the code lives.** Every function named below is in one of three files. The paths are relative to your `agent/` package; the reference versions are the same files under `solutions/00-setup/agent/`.
+
+| File | Functions and classes used here |
+|---|---|
+| `agent/__main__.py` | `main`, `build_parser`, `_smoke` |
+| `agent/config.py` | `Config`, `load_config` |
+| `agent/client.py` | `make_client`, `smoke_test`, `SmokeResult`, and the `READ_FILE_TOOL` schema |
+
 **1. `uv run` starts Python.** It uses the project's `.venv`, which has `openai` and `rich` installed, and runs it from the repo root.
 
-**2. `python -m agent` runs your package as a program.** Python finds `agent/` in the current folder and runs `agent/__main__.py`. Since that file is run as the main program, the line `if __name__ == "__main__": raise SystemExit(main())` executes. Whatever `main()` returns becomes the process exit code.
+**2. `python -m agent` runs your package as a program.** Python finds `agent/` in the current folder and runs `agent/__main__.py`. Since that file is run as the main program, the line `if __name__ == "__main__": raise SystemExit(main())` at its bottom executes, calling `main()` from the same file. Whatever `main()` returns becomes the process exit code.
 
-**3. `argparse` reads `smoke`.** `build_parser()` registers one subcommand, `smoke`, with `set_defaults(func=_smoke)`. Parsing `["smoke"]` gives an `args` object whose `args.func` is `_smoke`, and `main` calls it. Later lessons add `ask`, `chat` and the others by registering more subcommands the same way.
+**3. `argparse` reads `smoke`.** `build_parser()` (`agent/__main__.py`) registers one subcommand, `smoke`, with `set_defaults(func=_smoke)`. Parsing `["smoke"]` gives an `args` object whose `args.func` is `_smoke` (also in `agent/__main__.py`), and `main` calls it. Later lessons add `ask`, `chat` and the others by registering more subcommands the same way.
 
-**4. `load_config()` builds the settings.** It uses the defaults in `Config`, then values from `agent.json` (if you have one), then any `AGENT_*` environment variables. With nothing set, you get `base_url=http://localhost:1234/v1`, `model=qwen/qwen3.8-27b` and `api_key=lm-studio`.
+**4. `load_config()` builds the settings.** `_smoke` calls `load_config()` from `agent/config.py`. It uses the defaults in the `Config` class (same file), then values from `agent.json` (if you have one), then any `AGENT_*` environment variables. With nothing set, you get `base_url=http://localhost:1234/v1`, `model=qwen/qwen3.8-27b` and `api_key=lm-studio`.
 
-**5. `make_client(config)` creates an `openai.OpenAI` client** pointed at LM Studio instead of OpenAI. Creating the client sends nothing over the network. LM Studio ignores the API key, but the SDK requires one.
+**5. `make_client(config)` (`agent/client.py`) creates an `openai.OpenAI` client** pointed at LM Studio instead of OpenAI. Creating the client sends nothing over the network. LM Studio ignores the API key, but the SDK requires one.
 
-**6. `smoke_test` sends one request.** It's a `POST http://localhost:1234/v1/chat/completions` with this body:
+**6. `smoke_test` sends one request.** `_smoke` calls `smoke_test(client, config.model)` from `agent/client.py`. The request is a `POST http://localhost:1234/v1/chat/completions` with this body:
 
 ```json
 {"model": "qwen/qwen3.8-27b",
@@ -244,15 +252,17 @@ The tests above swap in a fake client. This section follows the real command, ag
  "tools": [{"type": "function", "function": {"name": "read_file", ...}}]}
 ```
 
+The `tools` entry is `READ_FILE_TOOL`, a dict defined at the top of `agent/client.py`.
+
 You can watch this exact request, and the model's reply, in LM Studio's developer log. On the server side:
 
 - LM Studio renders the messages and the tool schema into Qwen's chat template (about 322 prompt tokens in one run).
 - The model generates a reply. Since it was offered a tool, it usually asks to use it.
 - LM Studio turns that into a `tool_calls` entry whose `arguments` is the JSON *string* `'{"path": "notes.txt"}'`.
 
-**7. Your code checks the reply.** It looks for a tool call and parses the arguments with `json.loads`. Then it checks that the result is a dict, that the tool name is `read_file`, and that there's a `path` key. Any check that fails returns `SmokeResult(ok=False, detail=<why>)`.
+**7. Your code checks the reply.** Still inside `smoke_test` (`agent/client.py`), it looks for a tool call and parses the arguments with `json.loads`. Then it checks that the result is a dict, that the tool name is `read_file`, and that there's a `path` key. Any check that fails returns `SmokeResult(ok=False, detail=<why>)`. `SmokeResult` is a dataclass in `agent/client.py`.
 
-**8. `_smoke` prints the result and returns the exit code:**
+**8. `_smoke` (`agent/__main__.py`) prints the result and returns the exit code:**
 
 ```
 OK: read_file('notes.txt')
