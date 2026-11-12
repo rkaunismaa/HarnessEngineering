@@ -8,6 +8,24 @@ uv run pytest lessons/04-editing-files --impl solutions/04-editing-files
 uv run pytest lessons/04-editing-files --live -s -k live
 ```
 
+## Where the code lives
+
+Every function and class this walkthrough names is defined in one of the files below. Paths under `agent/` are relative to your own package; the reference versions are the same files under `solutions/04-editing-files/agent/`.
+
+| File | What's in it that this walkthrough uses |
+|---|---|
+| `agent/tools/__init__.py` | `make_default_tools` |
+| `agent/tools/files.py` | `edit_file` (defined inside `make_edit_file`), `read_file` (defined inside `make_read_file`), `write_file` (defined inside `make_write_file`) |
+| `agent/workspace.py` | `FileTracker`, `FileTracker.check`, `FileTracker.mark_read`, `Workspace` |
+
+<details><summary>Which test file each test is in</summary>
+
+| Test file | Tests |
+|---|---|
+| `lessons/04-editing-files/tests/test_edit.py` | 21 tests: `test_crlf_edit_never_inserts_bare_newline`, `test_crlf_multiline_edit`, `test_edit_detects_deleted_file`, `test_edit_detects_external_change`, `test_edit_ignores_touch_without_content_change`, `test_edit_missing_file`, `test_edit_multiple_matches_error`, `test_edit_not_found`, `test_edit_preserves_trailing_newline_and_crlf`, `test_edit_replace_all`, `test_edit_requires_read`, `test_edit_same_file_via_different_spelling`, `test_edit_same_strings`, `test_edit_then_edit_again_without_reread_ok`, `test_edit_unique_match`, `test_live_edit`, `test_read_file_output_unchanged`, `test_tools_registered`, `test_write_created_file_can_be_edited`, `test_write_existing_requires_read`, `test_write_new_file_creates_dirs` |
+
+</details>
+
 ## The big picture
 
 Lesson 4 lets the agent change files, with `edit_file` (replace an exact string) and `write_file` (create or overwrite). These are the first tools that can do damage, so most of the tests check what they *refuse* to do, and then look at the file on disk to prove nothing changed.
@@ -47,6 +65,8 @@ def edit(registry, path, old, new, **kw):
 `run` is lesson 2's helper: keyword arguments become a JSON string passed to `dispatch`.
 
 ## One test, step by step: `test_edit_detects_external_change`
+
+**Code this test exercises:** `read_file` (defined inside `make_read_file`) in `agent/tools/files.py`; `edit_file` (defined inside `make_edit_file`) in `agent/tools/files.py`; `FileTracker.mark_read` in `agent/workspace.py`; `FileTracker.check` in `agent/workspace.py`; `ToolRegistry.dispatch` in `agent/tools/registry.py`.
 
 This test plays out a real situation: the agent reads a file, then **you** change it in your editor, then the agent tries to edit its stale copy.
 

@@ -8,6 +8,37 @@ uv run pytest lessons/07-the-terminal --impl solutions/07-the-terminal
 uv run pytest lessons/07-the-terminal --live -s -k live
 ```
 
+## Where the code lives
+
+Every function and class this walkthrough names is defined in one of the files below. Paths under `agent/` are relative to your own package; the reference versions are the same files under `solutions/07-the-terminal/agent/`.
+
+| File | What's in it that this walkthrough uses |
+|---|---|
+| `agent/__main__.py` | `build_parser` |
+| `agent/cli.py` | `chat_loop`, `ConsoleEvents`, `preview` |
+| `agent/events.py` | `AgentEvents`, `AgentEvents.on_reasoning`, `AgentEvents.on_text`, `AgentEvents.on_tool_call`, `AgentEvents.on_tool_result` |
+| `agent/log.py` | `format_entry` |
+| `agent/loop.py` | `Agent`, `Agent.run` |
+| `agent/messages.py` | `message_to_dict`, `Usage` |
+| `agent/stream.py` | `accumulate` |
+| `agent/tools/files.py` | `read_file` (defined inside `make_read_file`), `search` (defined inside `make_search`) |
+
+The test helpers come from:
+
+| File | Helpers used |
+|---|---|
+| `testing/fake_model.py` | `call`, `FakeClient`, `reply`, `to_chunks` |
+
+<details><summary>Which test file each test is in</summary>
+
+| Test file | Tests |
+|---|---|
+| `lessons/07-the-terminal/tests/test_chat.py` | 10 tests: `test_chat_streams_answer_and_shows_tool_call`, `test_chat_subcommand_is_parsed`, `test_ctrl_c_at_prompt_and_eof_quit`, `test_format_entry_handles_streamed_entries`, `test_interrupted_turn_returns_to_prompt`, `test_preview_collapses_long_output`, `test_preview_cuts_long_lines`, `test_preview_short_text_unchanged`, `test_reasoning_and_text_are_on_separate_lines`, `test_reasoning_toggle` |
+| `lessons/07-the-terminal/tests/test_interrupt.py` | 4 tests: `test_interrupt_during_stream_drops_partial`, `test_interrupt_during_stream_is_logged`, `test_interrupt_during_tool_repairs_history`, `test_interrupt_keeps_results_of_calls_that_finished` |
+| `lessons/07-the-terminal/tests/test_stream.py` | 15 tests: `test_accumulate_first_chunk_with_role_and_reasoning_together`, `test_accumulate_reasoning_events`, `test_accumulate_text`, `test_accumulate_tool_call_fragments`, `test_accumulate_two_tool_calls_interleaved_indexes`, `test_accumulate_usage_last_chunk`, `test_base_events_are_noops`, `test_events_fire_for_refused_calls`, `test_events_fire_for_tool_calls`, `test_live_stream_usage`, `test_nonstream_requests_have_no_stream_args`, `test_stream_agent_matches_nonstream`, `test_stream_request_carries_sampling`, `test_streamed_log_entry`, `test_streamed_text_reaches_events_live` |
+
+</details>
+
 ## The big picture
 
 Lesson 7 adds three things that seem impossible to test without a person at a terminal:
@@ -86,6 +117,8 @@ A `Recorder` subclass of `AgentEvents` saves every callback as a tuple, such as 
 - **`test_streamed_text_reaches_events_live`**: in a full agent run, text events arrive in pieces.
 
 ## One test, step by step: `test_interrupt_during_tool_repairs_history`
+
+**Code this test exercises:** `Agent.run` in `agent/loop.py`; `Tool` in `agent/tools/registry.py`; `ToolRegistry` in `agent/tools/registry.py`; `FakeClient` in `testing/fake_model.py`.
 
 The tool in `test_interrupt.py` is `work(tag)`. It records each tag in the list `ran`, and raises `KeyboardInterrupt` when the tag equals `interrupt_on`. That's "you pressed Ctrl-C while this particular call was running".
 

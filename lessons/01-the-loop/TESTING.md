@@ -9,6 +9,36 @@ uv run pytest lessons/01-the-loop --impl solutions/01-the-loop  # the reference 
 
 There are two test files: `test_loop.py` covers the loop and the `read_file` tool, and `test_log.py` covers the request log.
 
+## Where the code lives
+
+Every function and class this walkthrough names is defined in one of the files below. Paths under `agent/` are relative to your own package; the reference versions are the same files under `solutions/01-the-loop/agent/`.
+
+| File | What's in it that this walkthrough uses |
+|---|---|
+| `agent/__main__.py` | `main` |
+| `agent/log.py` | `format_entry`, `latest_log`, `read_log`, `RequestLog`, `RequestLog.for_session`, `RequestLog.with_agent` |
+| `agent/loop.py` | `Agent`, `Agent._request`, `Agent._run_tool_call`, `Agent.run`, `TurnResult` |
+| `agent/messages.py` | `Usage` |
+| `agent/tools/__init__.py` | `make_default_tools` |
+| `agent/tools/files.py` | `read_file` (defined inside `make_read_file`) |
+| `agent/tools/registry.py` | `ToolRegistry.dispatch`, `ToolRegistry.schemas` |
+| `agent/workspace.py` | `Workspace`, `Workspace.resolve` |
+
+The test helpers come from:
+
+| File | Helpers used |
+|---|---|
+| `testing/fake_model.py` | `call`, `FakeClient`, `reply` |
+
+<details><summary>Which test file each test is in</summary>
+
+| Test file | Tests |
+|---|---|
+| `lessons/01-the-loop/tests/test_log.py` | 7 tests: `test_for_session_creates_timestamped_file`, `test_format_entry_shows_tool_calls`, `test_latest_log_picks_newest`, `test_log_keeps_reasoning`, `test_log_subcommand_prints_entries`, `test_log_written`, `test_with_agent_shares_file` |
+| `lessons/01-the-loop/tests/test_loop.py` | 16 tests: `test_assistant_message_with_tool_calls_is_plain_dict`, `test_empty_content_with_no_tools`, `test_history_persists_across_runs`, `test_live_read_file`, `test_no_sampling_keys_by_default`, `test_no_tool_call_ends_turn`, `test_none_content_with_no_tools`, `test_read_file_is_read_only_and_registered`, `test_read_file_offset_limit`, `test_reasoning_not_in_history`, `test_request_shape`, `test_sampling_sent_on_every_request`, `test_single_tool_round_trip`, `test_two_tool_calls_in_one_reply`, `test_usage_summed`, `test_workspace_resolve` |
+
+</details>
+
 ## The setup helper
 
 ```python
@@ -23,6 +53,8 @@ Only the model is fake. The tools are real: `read_file` really reads files, insi
 The helper returns the client too, so the test can look at `client.requests` afterwards.
 
 ## The main test: one full round trip
+
+**Code this test exercises:** `Agent.run` in `agent/loop.py`; `Agent._request` in `agent/loop.py`; `Agent._run_tool_call` in `agent/loop.py`; `message_to_dict` in `agent/messages.py`; `ToolRegistry.dispatch` in `agent/tools/registry.py`; `read_file` (defined inside `make_read_file`) in `agent/tools/files.py`; `FakeClient` in `testing/fake_model.py`.
 
 ```python
 def test_single_tool_round_trip(tmp_path):

@@ -2,6 +2,31 @@
 
 Lesson 0's tests have three parts: a switch that picks which `agent/` package is tested, tests of plain functions that take their inputs as arguments, and a fake OpenAI client that returns scripted replies. Against the reference solution, the result is 10 passed and 1 skipped. The skipped one is the live test, which only runs with `--live`.
 
+## Where the code lives
+
+Every function and class this walkthrough names is defined in one of the files below. Paths under `agent/` are relative to your own package; the reference versions are the same files under `solutions/00-setup/agent/`.
+
+| File | What's in it that this walkthrough uses |
+|---|---|
+| `agent/__main__.py` | `_smoke`, `build_parser` |
+| `agent/client.py` | `make_client`, `READ_FILE_TOOL`, `smoke_test`, `SmokeResult` |
+| `agent/config.py` | `Config`, `load_config` |
+
+The test helpers come from:
+
+| File | Helpers used |
+|---|---|
+| `conftest.py` | `pytest_addoption`, `pytest_collection_modifyitems`, `pytest_configure` |
+| `testing/fake_model.py` | `call`, `FakeClient`, `reply`, `to_chunks` |
+
+<details><summary>Which test file each test is in</summary>
+
+| Test file | Tests |
+|---|---|
+| `lessons/00-setup/tests/test_setup.py` | 11 tests: `test_defaults`, `test_env_log_dir_is_path`, `test_env_overrides_file`, `test_live_smoke`, `test_make_client_uses_config`, `test_sampling_from_file_and_env`, `test_sampling_unset_by_default`, `test_smoke_bad_json`, `test_smoke_missing_path`, `test_smoke_no_tool_call`, `test_smoke_ok` |
+
+</details>
+
 ## First: how pytest runs a file that never calls its own functions
 
 `test_setup.py` is just a series of `def`s, and nothing in it calls them. Pytest finds them by their names and calls them itself.

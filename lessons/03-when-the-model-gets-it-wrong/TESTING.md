@@ -8,6 +8,31 @@ uv run pytest lessons/03-when-the-model-gets-it-wrong --impl solutions/03-when-t
 uv run pytest lessons/03-when-the-model-gets-it-wrong --live -s -k 4b    # see the 4B's calls
 ```
 
+## Where the code lives
+
+Every function and class this walkthrough names is defined in one of the files below. Paths under `agent/` are relative to your own package; the reference versions are the same files under `solutions/03-when-the-model-gets-it-wrong/agent/`.
+
+| File | What's in it that this walkthrough uses |
+|---|---|
+| `agent/loop.py` | `TurnResult` |
+| `agent/tools/files.py` | `list_files` (defined inside `make_list_files`), `read_file` (defined inside `make_read_file`), `search` (defined inside `make_search`) |
+| `agent/tools/registry.py` | `Tool`, `ToolRegistry`, `ToolRegistry.dispatch`, `validate_args` |
+| `agent/tools/shell.py` | `bash` (defined inside `make_bash`) |
+
+The test helpers come from:
+
+| File | Helpers used |
+|---|---|
+| `testing/fake_model.py` | `bad_request`, `call`, `connection_error`, `FakeClient`, `reply` |
+
+<details><summary>Which test file each test is in</summary>
+
+| Test file | Tests |
+|---|---|
+| `lessons/03-when-the-model-gets-it-wrong/tests/test_errors.py` | 25 tests: `test_api_error_mid_session_keeps_history_valid`, `test_arguments_not_object`, `test_bad_json`, `test_bad_json_exact_message`, `test_bool_is_not_integer`, `test_connection_error`, `test_dispatch_never_raises_on_real_tools`, `test_error_fed_back_and_model_recovers`, `test_error_results_are_truncated`, `test_live_4b_failures`, `test_loop_detection`, `test_loop_detection_applies_to_failing_calls`, `test_loop_detection_counts_within_one_reply`, `test_loop_detection_needs_consecutive_calls`, `test_max_turns`, `test_max_turns_default_is_50`, `test_max_turns_keeps_history_valid`, `test_missing_required`, `test_several_errors_joined`, `test_tool_exception`, `test_unknown_param`, `test_unknown_tool`, `test_unknown_tool_lists_all_names`, `test_validate_args_types`, `test_wrong_type` |
+
+</details>
+
 ## The big picture
 
 Lessons 1 and 2 tested the happy path. Lesson 3's tests deliberately feed your harness **bad input**, the kind real models produce:
@@ -50,6 +75,8 @@ def small_registry(fn=None):
 `make_agent` is the same as in lesson 1. `tool_results(agent)` pulls the content of every `tool` message out of the history, in order.
 
 ## One test, step by step: `test_error_fed_back_and_model_recovers`
+
+**Code this test exercises:** `Agent.run` in `agent/loop.py`; `ToolRegistry.dispatch` in `agent/tools/registry.py`; `read_file` (defined inside `make_read_file`) in `agent/tools/files.py`; `FakeClient` in `testing/fake_model.py`; `call` in `testing/fake_model.py`.
 
 This is the whole lesson in one test: a model makes a mistake, the harness tells it, and it fixes itself.
 

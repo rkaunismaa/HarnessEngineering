@@ -8,6 +8,26 @@ uv run pytest lessons/06-the-system-prompt --impl solutions/06-the-system-prompt
 uv run pytest lessons/06-the-system-prompt --live -s -k live
 ```
 
+## Where the code lives
+
+Every function and class this walkthrough names is defined in one of the files below. Paths under `agent/` are relative to your own package; the reference versions are the same files under `solutions/06-the-system-prompt/agent/`.
+
+| File | What's in it that this walkthrough uses |
+|---|---|
+| `agent/prompt.py` | `build_system_prompt`, `git_summary`, `INSTRUCTION_FILES`, `load_project_instructions`, `MAX_INSTRUCTIONS_CHARS` |
+| `agent/tools/__init__.py` | `make_default_tools` |
+| `agent/tools/files.py` | `edit_file` (defined inside `make_edit_file`), `list_files` (defined inside `make_list_files`), `read_file` (defined inside `make_read_file`), `search` (defined inside `make_search`), `write_file` (defined inside `make_write_file`) |
+| `agent/tools/shell.py` | `bash` (defined inside `make_bash`) |
+| `agent/workspace.py` | `Workspace` |
+
+<details><summary>Which test file each test is in</summary>
+
+| Test file | Tests |
+|---|---|
+| `lessons/06-the-system-prompt/tests/test_prompt.py` | 16 tests: `test_agents_md_preferred_over_claude_md`, `test_claude_md_used_alone`, `test_environment_lines`, `test_extra_is_last`, `test_git_summary_clean_after_commit`, `test_git_summary_detached_head`, `test_git_summary_not_repo`, `test_git_summary_repo`, `test_git_summary_without_git`, `test_instruction_files_constants`, `test_instructions_truncated`, `test_live_follows_project_instruction`, `test_no_instructions_section_when_absent`, `test_sections_in_order`, `test_tool_rules_mention_search_and_list_files`, `test_tools_listed` |
+
+</details>
+
 ## The big picture
 
 The system prompt is just a string: the first message of every request, with `role: "system"`. `build_system_prompt(ws, tools, now=..., extra=...)` assembles it from parts. So the tests don't need a model, a fake model or a loop. They call the function and look at the string it returns.
@@ -69,6 +89,8 @@ def build(tmp_path, **kwargs):
 The prompt includes today's date, which would make the output different every day. So `build_system_prompt` takes `now=`: the real CLI leaves it out and gets the current time, and the tests pass a fixed date. It's the same trick as lesson 0's `env=` and `file=`: anything that varies goes in as an argument.
 
 ## One test, step by step: `test_sections_in_order`
+
+**Code this test exercises:** `build_system_prompt` in `agent/prompt.py`; `git_summary` in `agent/prompt.py`; `load_project_instructions` in `agent/prompt.py`.
 
 ```python
 def test_sections_in_order(tmp_path):

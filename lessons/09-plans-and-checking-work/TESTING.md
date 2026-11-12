@@ -8,6 +8,33 @@ uv run pytest lessons/09-plans-and-checking-work --impl solutions/09-plans-and-c
 uv run pytest lessons/09-plans-and-checking-work --live -s -k live
 ```
 
+## Where the code lives
+
+Every function and class this walkthrough names is defined in one of the files below. Paths under `agent/` are relative to your own package; the reference versions are the same files under `solutions/09-plans-and-checking-work/agent/`.
+
+| File | What's in it that this walkthrough uses |
+|---|---|
+| `agent/__main__.py` | `_make_verify`, `build_parser` |
+| `agent/loop.py` | `Agent.run`, `TurnResult` |
+| `agent/tools/files.py` | `write_file` (defined inside `make_write_file`) |
+| `agent/tools/registry.py` | `ToolRegistry.dispatch`, `validate_args` |
+| `agent/tools/todo.py` | `todo_write` (defined inside `make_todo_write`) |
+
+The test helpers come from:
+
+| File | Helpers used |
+|---|---|
+| `testing/fake_model.py` | `call`, `reply` |
+
+<details><summary>Which test file each test is in</summary>
+
+| Test file | Tests |
+|---|---|
+| `lessons/09-plans-and-checking-work/tests/test_todo.py` | 7 tests: `test_live_uses_todo`, `test_todo_bad_status`, `test_todo_replace_and_render`, `test_todo_schema_has_enum`, `test_todo_through_agent_and_prompt`, `test_todo_two_in_progress_error`, `test_validate_args_arrays_of_objects` |
+| `lessons/09-plans-and-checking-work/tests/test_verify.py` | 7 tests: `test_cli_verify_option`, `test_max_verify_attempts_and_counts_reset_per_run`, `test_no_verify_is_none`, `test_verify_fail_then_fix`, `test_verify_gives_up`, `test_verify_pass_first_time`, `test_verify_skipped_when_tool_calls_and_when_not_done` |
+
+</details>
+
 ## The big picture
 
 Lesson 9 adds two independent features, with one test file each:
@@ -79,6 +106,8 @@ def scripted_verify(results):
 Each call to `verify()` returns the next `(ok, output)` pair, repeating the last one when the list runs out. `len(seen)` says how many times it ran. The agent gets it as `verify=`. The real CLI passes a function that runs a shell command (`--verify "pytest -q"`).
 
 ### One test, step by step: `test_verify_fail_then_fix`
+
+**Code this test exercises:** `Agent.run` in `agent/loop.py`; `write_file` (defined inside `make_write_file`) in `agent/tools/files.py`; `FakeClient` in `testing/fake_model.py`.
 
 ```python
 def test_verify_fail_then_fix(tmp_path):

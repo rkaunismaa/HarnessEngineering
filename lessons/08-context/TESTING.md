@@ -8,6 +8,32 @@ uv run pytest lessons/08-context --impl solutions/08-context
 uv run pytest lessons/08-context --live -s -k live
 ```
 
+## Where the code lives
+
+Every function and class this walkthrough names is defined in one of the files below. Paths under `agent/` are relative to your own package; the reference versions are the same files under `solutions/08-context/agent/`.
+
+| File | What's in it that this walkthrough uses |
+|---|---|
+| `agent/cli.py` | `ConsoleEvents.on_compact` |
+| `agent/context.py` | `compact`, `ContextManager`, `ContextManager.needs_compaction`, `error_text`, `estimate_tokens`, `is_context_overflow`, `split_index`, `trim_old_tool_results` |
+| `agent/events.py` | `AgentEvents.on_compact` |
+| `agent/loop.py` | `Agent.run` |
+| `agent/tools/files.py` | `read_file` (defined inside `make_read_file`) |
+
+The test helpers come from:
+
+| File | Helpers used |
+|---|---|
+| `testing/fake_model.py` | `call`, `FakeClient`, `reply` |
+
+<details><summary>Which test file each test is in</summary>
+
+| Test file | Tests |
+|---|---|
+| `lessons/08-context/tests/test_context.py` | 21 tests: `test_agent_compacts_when_over_threshold`, `test_agent_trims_old_tool_results_permanently`, `test_agent_without_context_never_compacts`, `test_compact_keeps_tool_pairs`, `test_compact_merges_into_user_message`, `test_compact_shape`, `test_compact_with_nothing_to_summarize_makes_no_call`, `test_compact_without_system_message`, `test_console_events_print_compaction`, `test_context_overflow_retry`, `test_context_overflow_twice_errors`, `test_error_text_does_not_repeat_the_body`, `test_estimate_tokens`, `test_live_overflow_message`, `test_needs_compaction_uses_usage_then_estimate`, `test_other_bad_requests_are_not_retried`, `test_overflow_is_detected_in_the_body_not_just_str`, `test_overflow_without_context_manager_is_an_error`, `test_split_never_on_tool_message`, `test_streaming_usage_feeds_the_manager`, `test_trim_keeps_recent_and_small` |
+
+</details>
+
 ## The big picture
 
 The model can only read so much at once: 32,768 tokens with this course's LM Studio setup. Every request sends the whole history (lesson 1), so a long session eventually doesn't fit. Lesson 8 shrinks the history in two ways:
@@ -67,6 +93,8 @@ user, assistant, xxxx...(1000),   user, assistant, xxxx...(1000)      <- last 6,
 It never splits on a `tool` message, because that would separate a result from the call it answers. It never goes below 1, which protects the system message. `test_split_never_on_tool_message` tries every `keep` from 0 to 11.
 
 ## One test, step by step: `test_agent_compacts_when_over_threshold`
+
+**Code this test exercises:** `Agent.run` in `agent/loop.py`; `ContextManager.needs_compaction` in `agent/context.py`; `split_index` in `agent/context.py`; `compact` in `agent/context.py`; `AgentEvents.on_compact` in `agent/events.py`; `read_file` (defined inside `make_read_file`) in `agent/tools/files.py`.
 
 This is the whole mechanism inside a real agent run:
 

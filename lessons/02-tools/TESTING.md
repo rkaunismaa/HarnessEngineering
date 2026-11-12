@@ -8,6 +8,26 @@ uv run pytest lessons/02-tools --impl solutions/02-tools     # the reference sol
 uv run pytest lessons/02-tools --live                        # includes the real-model test
 ```
 
+## Where the code lives
+
+Every function and class this walkthrough names is defined in one of the files below. Paths under `agent/` are relative to your own package; the reference versions are the same files under `solutions/02-tools/agent/`.
+
+| File | What's in it that this walkthrough uses |
+|---|---|
+| `agent/tools/__init__.py` | `make_default_tools` |
+| `agent/tools/files.py` | `list_files` (defined inside `make_list_files`), `read_file` (defined inside `make_read_file`), `search` (defined inside `make_search`) |
+| `agent/tools/registry.py` | `ToolRegistry`, `ToolRegistry.dispatch`, `ToolRegistry.names`, `truncate` |
+| `agent/tools/shell.py` | `bash` (defined inside `make_bash`) |
+| `agent/workspace.py` | `Workspace` |
+
+<details><summary>Which test file each test is in</summary>
+
+| Test file | Tests |
+|---|---|
+| `lessons/02-tools/tests/test_tools.py` | 21 tests: `test_bash_confirmed_runs`, `test_bash_declined`, `test_bash_exit_code`, `test_bash_huge_output_is_truncated_by_dispatch`, `test_bash_runs_in_workspace_and_combines_stderr`, `test_bash_timeout`, `test_default_tool_names`, `test_dispatch_truncates`, `test_list_files_caps_at_500`, `test_list_files_glob`, `test_list_files_skips_git_and_sorts`, `test_live_finds_function`, `test_read_file_binary_returns_error`, `test_search_caps_matches`, `test_search_glob_and_path`, `test_search_glob_without_slash_matches_any_depth`, `test_search_invalid_regex`, `test_search_matches_format`, `test_search_no_matches`, `test_search_skips_binary`, `test_truncate_exact` |
+
+</details>
+
 ## The big picture
 
 Lesson 1's tests needed a fake model, because the loop is what talks to the model. Lesson 2 adds three tools (`list_files`, `search`, `bash`), and a tool doesn't talk to the model at all: it takes arguments and returns a string. So almost every test here leaves the model and the loop out entirely:
@@ -45,6 +65,8 @@ run(registry, "search", pattern=r"def \w+")
 calls `registry.dispatch("search", '{"pattern": "def \\\\w+"}')`. That is the same code path a real tool call takes, minus the loop.
 
 ## One test, step by step: `test_list_files_skips_git_and_sorts`
+
+**Code this test exercises:** `make_default_tools` in `agent/tools/__init__.py`; `ToolRegistry.dispatch` in `agent/tools/registry.py`; `truncate` in `agent/tools/registry.py`; `list_files` (defined inside `make_list_files`) in `agent/tools/files.py`; `Workspace` in `agent/workspace.py`.
 
 ```python
 def test_list_files_skips_git_and_sorts(tmp_path):

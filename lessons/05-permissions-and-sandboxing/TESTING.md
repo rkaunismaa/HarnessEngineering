@@ -8,6 +8,35 @@ uv run pytest lessons/05-permissions-and-sandboxing --impl solutions/05-permissi
 uv run pytest lessons/05-permissions-and-sandboxing --live      # adds the network-on check
 ```
 
+## Where the code lives
+
+Every function and class this walkthrough names is defined in one of the files below. Paths under `agent/` are relative to your own package; the reference versions are the same files under `solutions/05-permissions-and-sandboxing/agent/`.
+
+| File | What's in it that this walkthrough uses |
+|---|---|
+| `agent/__main__.py` | `build_parser` |
+| `agent/loop.py` | `Agent`, `Agent.run` |
+| `agent/permissions.py` | `Decision`, `PermissionPolicy`, `PermissionPolicy.check`, `PermissionPolicy.remember`, `SHELL_OPERATORS` |
+| `agent/sandbox.py` | `build_bwrap_argv`, `sandbox_available`, `SandboxConfig` |
+| `agent/tools/files.py` | `edit_file` (defined inside `make_edit_file`), `list_files` (defined inside `make_list_files`), `read_file` (defined inside `make_read_file`), `search` (defined inside `make_search`), `write_file` (defined inside `make_write_file`) |
+| `agent/tools/shell.py` | `bash` (defined inside `make_bash`), `run_shell` |
+| `agent/workspace.py` | `PathOutsideProject`, `Workspace.resolve` |
+
+The test helpers come from:
+
+| File | Helpers used |
+|---|---|
+| `testing/fake_model.py` | `call`, `FakeClient`, `reply` |
+
+<details><summary>Which test file each test is in</summary>
+
+| Test file | Tests |
+|---|---|
+| `lessons/05-permissions-and-sandboxing/tests/test_permissions.py` | 38 tests: `test_agent_always_then_no_prompt`, `test_agent_approved_runs`, `test_agent_bad_arguments_skip_approval`, `test_agent_denied_result`, `test_agent_no_approver`, `test_agent_read_only_needs_no_approver`, `test_agent_uses_workspace_for_path_rules`, `test_agent_without_policy_runs_everything`, `test_agent_yes_does_not_remember`, `test_allow_path_rule`, `test_allow_prefix_rule`, `test_allow_rule_is_case_sensitive`, `test_auto_approve`, `test_background_operator_not_allowed`, `test_bare_rule_matches_any_arguments`, `test_cli_ask_flags`, `test_denied_calls_count_for_loop_detection`, `test_deny_beats_allow`, `test_deny_beats_auto_approve`, `test_deny_beats_read_only`, `test_deny_path_rule_not_bypassed_by_spelling`, `test_deny_path_rule_through_symlink`, `test_edit_same_file_via_dotdot_spelling`, `test_mutating_asks`, `test_operators_never_auto_allowed`, `test_operators_still_hit_deny_rules`, `test_outside_path_never_allowed`, `test_path_outside_project`, `test_path_rules_use_normalized_path`, `test_read_only_allowed`, `test_remember_escapes_glob_chars`, `test_remember_non_bash_is_bare_tool_name`, `test_resolve_raises`, `test_shell_operators_exact`, `test_sibling_with_same_prefix_is_outside`, `test_symlink_escape`, `test_symlink_escape_not_listed_or_searched`, `test_without_workspace_rules_see_raw_argument` |
+| `lessons/05-permissions-and-sandboxing/tests/test_sandbox.py` | 27 tests: `test_argv_exact`, `test_argv_network_flag`, `test_command_is_one_argument`, `test_config_defaults`, `test_disabled_sandbox_runs_plain`, `test_paths_under_run_refused`, `test_plain_background_job_does_not_block`, `test_plain_background_job_in_group_is_killed`, `test_real_background_process_dies_with_call`, `test_real_dbus_session_socket_unreachable`, `test_real_docker_socket_hidden`, `test_real_exit_code_passes_through`, `test_real_extra_writable`, `test_real_host_socket_env_unset`, `test_real_network_allowed`, `test_real_no_network`, `test_real_root_under_tmp_visible`, `test_real_sandbox_available`, `test_real_systemd_run_fails`, `test_real_timeout_kills_sandboxed_command`, `test_real_tmp_is_private`, `test_real_write_inside_ok`, `test_real_write_outside_blocked`, `test_run_shell_plain`, `test_sandbox_available_returns_bool`, `test_tmpfs_before_root_bind`, `test_workspace_sandbox_default_none` |
+
+</details>
+
 ## The big picture
 
 Lesson 5 puts three separate layers between the model and your machine. Each one has its own tests:
@@ -92,6 +121,8 @@ The tests in parts 1 and 2 of `test_permissions.py` each pin down one row of log
 - **`test_agent_uses_workspace_for_path_rules`**: the `Agent` really passes its workspace to the policy. A scripted `read_file("./secrets/key")` is denied end to end.
 
 ## Layer 1 inside the agent, step by step: `test_agent_denied_result`
+
+**Code this test exercises:** `Agent.run` in `agent/loop.py`; `PermissionPolicy.check` in `agent/permissions.py`; `bash` (defined inside `make_bash`) in `agent/tools/shell.py`; `FakeClient` in `testing/fake_model.py`.
 
 ```python
 def test_agent_denied_result(tmp_path):

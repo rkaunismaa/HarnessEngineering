@@ -9,6 +9,37 @@ uv run pytest lessons/11-capstone --live -s -k capstone_once
 uv run pytest capstone/eval                  # the checker's own tests (see the end)
 ```
 
+## Where the code lives
+
+Every function and class this walkthrough names is defined in one of the files below. Paths under `agent/` are relative to your own package; the reference versions are the same files under `solutions/11-capstone/agent/`.
+
+| File | What's in it that this walkthrough uses |
+|---|---|
+| `agent/__main__.py` | `build_parser`, `main` |
+| `agent/eval.py` | `EvalReport`, `EvalReport.mean_prompt_tokens`, `EvalReport.mean_turns`, `EvalReport.success_rate`, `run_eval` |
+| `agent/headless.py` | `DEFAULT_VERIFY_COMMAND`, `run_task`, `RunReport`, `SandboxUnavailable` |
+| `agent/sandbox.py` | `sandbox_available` |
+| `agent/tools/files.py` | `edit_file` (defined inside `make_edit_file`), `list_files` (defined inside `make_list_files`), `read_file` (defined inside `make_read_file`), `search` (defined inside `make_search`) |
+| `agent/tools/shell.py` | `bash` (defined inside `make_bash`) |
+| `agent/tools/todo.py` | `todo_write` (defined inside `make_todo_write`) |
+
+The test helpers come from:
+
+| File | Helpers used |
+|---|---|
+| `capstone/eval/check.py` | `check_fix` |
+| `testing/fake_model.py` | `call`, `FakeClient`, `reply` |
+
+<details><summary>Which test file each test is in</summary>
+
+| Test file | Tests |
+|---|---|
+| `lessons/11-capstone/tests/test_eval.py` | 7 tests: `test_cli_eval_refuses_existing_run_dirs`, `test_each_run_gets_its_own_log`, `test_empty_report`, `test_eval_check_receives_workdir_and_original`, `test_eval_copies_and_never_touches_project`, `test_eval_success_rate`, `test_live_capstone_once` |
+| `lessons/11-capstone/tests/test_headless.py` | 10 tests: `test_cli_has_run_and_eval_options`, `test_cli_run_refuses_without_sandbox`, `test_cli_run_works_on_a_copy`, `test_default_verify_command_uses_this_python`, `test_max_turns_reported`, `test_requires_sandbox`, `test_run_task_with_fake`, `test_verify_command_used`, `test_verify_failure_reported`, `test_verify_runs_in_sandbox` |
+| `capstone/eval/test_check.py` | 8 tests: `test_added_test_file_detected`, `test_agent_code_cannot_write_outside_workdir`, `test_deleting_failing_test_detected`, `test_fix_in_periods_fails`, `test_fix_in_report_passes`, `test_fixing_only_monthly_totals_fails`, `test_refuses_to_run_unsandboxed`, `test_unfixed_fails` |
+
+</details>
+
 ## The big picture
 
 Lesson 11 turns the agent into two new things:
@@ -35,6 +66,8 @@ Two pytest tools appear more often here than before:
 - **`capsys`** captures what the command line prints, so a test can check the error message.
 
 ## One test, step by step: `test_verify_command_used`
+
+**Code this test exercises:** `run_task` in `agent/headless.py`; `RunReport` in `agent/headless.py`; `Agent.run` in `agent/loop.py`; `bash` (defined inside `make_bash`) in `agent/tools/shell.py`; `FakeClient` in `testing/fake_model.py`.
 
 This test shows a whole unattended run with a real check command, but no test suite:
 

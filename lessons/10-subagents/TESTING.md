@@ -8,6 +8,35 @@ uv run pytest lessons/10-subagents --impl solutions/10-subagents
 uv run pytest lessons/10-subagents --live -s -k live
 ```
 
+## Where the code lives
+
+Every function and class this walkthrough names is defined in one of the files below. Paths under `agent/` are relative to your own package; the reference versions are the same files under `solutions/10-subagents/agent/`.
+
+| File | What's in it that this walkthrough uses |
+|---|---|
+| `agent/log.py` | `RequestLog.with_agent` |
+| `agent/loop.py` | `Agent`, `Agent.run` |
+| `agent/tools/__init__.py` | `make_default_tools` |
+| `agent/tools/files.py` | `list_files` (defined inside `make_list_files`), `read_file` (defined inside `make_read_file`), `search` (defined inside `make_search`) |
+| `agent/tools/registry.py` | `Tool`, `ToolRegistry.subset` |
+| `agent/tools/shell.py` | `bash` (defined inside `make_bash`) |
+| `agent/tools/subagent.py` | `subagent` (defined inside `make_subagent_tool`), `SUBAGENT_MAX_ANSWER`, `SUBAGENT_MAX_TURNS`, `SUBAGENT_TOOLS` |
+| `agent/workspace.py` | `Workspace` |
+
+The test helpers come from:
+
+| File | Helpers used |
+|---|---|
+| `testing/fake_model.py` | `call`, `FakeClient`, `reply` |
+
+<details><summary>Which test file each test is in</summary>
+
+| Test file | Tests |
+|---|---|
+| `lessons/10-subagents/tests/test_subagent.py` | 12 tests: `test_live_subagent_search`, `test_parent_sees_only_answer`, `test_registry_subset`, `test_subagent_answer_truncated`, `test_subagent_empty_task_is_a_schema_error`, `test_subagent_error`, `test_subagent_fresh_context`, `test_subagent_gets_only_read_tools`, `test_subagent_log_tag`, `test_subagent_max_turns_message`, `test_subagent_obeys_parent_deny_rules`, `test_subagent_registered_only_with_client` |
+
+</details>
+
 ## The big picture
 
 A **subagent** is a second agent the main agent can start, through a tool called `subagent`, to do one search task. The helper:
@@ -46,6 +75,8 @@ def make(tmp_path, script, log=None):
 `make_default_tools` only adds the `subagent` tool when it's given a `client` and `model`, because the helper needs them to make its own requests. Note that the *same* `client` goes to both the tools and the parent `Agent`.
 
 ## One test, step by step: `test_parent_sees_only_answer`
+
+**Code this test exercises:** `subagent` (defined inside `make_subagent_tool`) in `agent/tools/subagent.py`; `ToolRegistry.subset` in `agent/tools/registry.py`; `make_default_tools` in `agent/tools/__init__.py`; `Agent.run` in `agent/loop.py`; `read_file` (defined inside `make_read_file`) in `agent/tools/files.py`; `FakeClient` in `testing/fake_model.py`.
 
 ```python
 def test_parent_sees_only_answer(tmp_path):
