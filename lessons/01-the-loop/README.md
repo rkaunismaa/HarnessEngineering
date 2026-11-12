@@ -15,9 +15,9 @@ Chat-completions messages have a `role`:
 
 Each response also has a `finish_reason`: `tool_calls` when the model wants tools run, `stop` when it finished, `length` when it ran out of tokens. Your loop in this lesson stops on "no tool calls in the reply"; later lessons will care about the other reasons.
 
-**Reasoning stays out of the history.** Qwen3 models "think" before answering; the server returns that in a separate field, `reasoning_content`. The Qwen3 model card (https://huggingface.co/Qwen/Qwen3-4B, "Best Practices") says the historical model output should only include the final output part and does not need to include the thinking content, and that its chat template does this itself. Re-sending thinking would also cost prompt tokens on every later request, in a 32K window. So the history keeps `role`, `content` and `tool_calls` only. The **request log** (below) keeps everything the server sent, reasoning included, so you can still read it.
+**Reasoning stays out of the history.** Qwen3 models "think" before answering; the server returns that in a separate field, `reasoning_content`. The Qwen3 model card (https://huggingface.co/Qwen/Qwen3-4B, "Best Practices") says the historical model output should only include the final output part and does not need to include the thinking content, and that its chat template does this itself. The Qwen3.8 template this course uses would actually write earlier thinking back into the prompt if you sent it (step 8 of the walkthrough below shows the setting), so leaving it out is the harness's decision. Re-sending thinking would also cost prompt tokens on every later request, in a 32K window. So the history keeps `role`, `content` and `tool_calls` only. The **request log** (below) keeps everything the server sent, reasoning included, so you can still read it.
 
-**Two logs.** Your request log records what *your code* sent and received: JSON, one line per request. It is not what the model actually sees. The server applies the model's **chat template** to your `messages` and `tools`, producing one long prompt string with special tokens and the tool definitions written into it. LM Studio's developer log shows requests as the server saw them; find the prompt it rendered for one of your requests and compare it with your own log line. Seeing the template output once makes most "why did the model do that" questions easier.
+**Two logs.** Your request log records what *your code* sent and received: JSON, one line per request. It is not what the model actually sees. The server applies the model's **chat template** to your `messages` and `tools`, producing one long prompt string with special tokens and the tool definitions written into it. LM Studio's developer log shows requests as the server saw them; find the prompt it rendered for one of your requests and compare it with your own log line. Seeing the template output once makes most "why did the model do that" questions easier. `lms log stream -s model --filter input,output` prints it in a terminal; steps 5 and 8 of the walkthrough below show real ones.
 
 ## How Claude Code does it
 
@@ -263,6 +263,60 @@ The `tools` list comes from `ToolRegistry.schemas()` in `agent/tools/registry.py
 
 **What LM Studio does with it:** it feeds `messages` and `tools` into the model's **chat template**, which writes them out as one long piece of text with special markers. That text was **382 tokens** long. The model reads it and generates a reply. Qwen thinks first, in a separate field. The call blocks (waits) until the reply is complete; this one took **0.99 s**.
 
+**Inside LM Studio: the chat template.** A model doesn't really read "messages" or "tools". It reads one long sequence of tokens and predicts what comes next. So before anything is generated, LM Studio has to turn your JSON into text, and it has to be text laid out *exactly* the way the model saw during training, or it behaves worse. The model's makers ship that layout as a small program called the **chat template**, written in Jinja (a templating language). It's stored inside the model file itself: for this model it's the `tokenizer.chat_template` entry in `Qwen3.8-27B-Q4_K_M.gguf`, 173 lines long. Ollama and vLLM run the same kind of template.
+
+You can watch the result. Run `lms log stream -s model --filter input,output` in a second terminal, then run the `ask` command. When the command was rerun on 2026-11-12, request 1 above became this text (copied from that log, nothing removed):
+
+```text
+<|im_start|>system
+Reasoning effort is set to xhigh. Please think carefully through the task, validate key assumptions, consider plausible alternatives, and prioritize correctness, consistency, and clarity in the final answer.
+
+# Tools
+
+You have access to the following functions:
+
+<tools>
+{"type": "function", "function": {"name": "read_file", "description": "Read a text file. Returns numbered lines. Use offset (1-based line) and limit to read part of a large file.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "File path"}, "offset": {"type": "integer", "description": "First line to read (1-based)"}, "limit": {"type": "integer", "description": "Maximum number of lines"}}, "required": ["path"]}}}
+</tools>
+
+If you choose to call a function ONLY reply in the following format with NO suffix:
+
+<tool_call>
+<function=example_function_name>
+<parameter=example_parameter_1>
+value_1
+</parameter>
+<parameter=example_parameter_2>
+This is the value for the second parameter
+that can span
+multiple lines
+</parameter>
+</function>
+</tool_call>
+
+<IMPORTANT>
+Reminder:
+- Function calls MUST follow the specified format: an inner <function=...></function> block must be nested within <tool_call></tool_call> XML tags
+- Required parameters MUST be specified
+- You may provide optional reasoning for your function call in natural language BEFORE the function call, but NOT after
+- If there is no function call available, answer the question like normal with your current knowledge and do not tell the user about function calls
+</IMPORTANT><|im_end|>
+<|im_start|>user
+Read notes.txt and tell me the second line.<|im_end|>
+<|im_start|>assistant
+<think>
+```
+
+Reading it from the top:
+
+- **`<|im_start|>` and `<|im_end|>`** are *special tokens*: single tokens the model learned as "a message starts here" and "a message ends here". The word right after `<|im_start|>` is the role: `system`, `user` or `assistant`.
+- **There's a system message you never sent.** Your request had no `system` message, but the template wrote one anyway. Its first line comes from a template setting called `reasoning_effort`, which defaults to `xhigh` when the request doesn't set it. (It could also be `medium` or `low`.)
+- **Your `tools` list went into the system message**, under `# Tools`, inside `<tools>...</tools>`, one line of JSON per tool. Then come about 20 lines of instructions telling the model how to call a function. Together, these are most of the 382 tokens; the question itself is about a dozen. Lesson 2 adds tools, and every tool's line is sent again on every request.
+- **The call format isn't JSON.** The model is told to write calls as `<tool_call><function=read_file><parameter=path>notes.txt</parameter></function></tool_call>`. That's the format this model family was trained on.
+- **The prompt ends halfway through a message:** `<|im_start|>assistant` and then `<think>`. This is called the *generation prompt*. The model's job is to continue the text from there, so it starts by thinking.
+
+The model then writes, one token at a time: its thinking, then `</think>`, then a `<tool_call>` block in the format above, then `<|im_end|>`. LM Studio reads that raw text back and *parses* it into the JSON you get. The thinking (the text before `</think>`) becomes `reasoning_content`. The `<tool_call>` block becomes an entry in `tool_calls`, with the parameters turned into the `arguments` JSON string and a random `id` that LM Studio makes up. What's left over becomes `content`, which is why `content` is `""` below. When a model or server gets this parsing wrong, you see "tool call" text inside `content` and an empty `tool_calls`. Lesson 3 deals with that.
+
 **What comes back:** the library turns the JSON reply into a Python object, `completion`. The part that matters is `completion.choices[0]`:
 
 ```json
@@ -365,6 +419,53 @@ The rendered prompt is now **439 tokens** (382 before, plus the tool call and th
 
 with `prompt_tokens=439, completion_tokens=44` (30 of them reasoning). **`finish_reason: "stop"`** means the model finished on its own. `tool_calls` is an empty list here (another server might send `None`); `if not message.tool_calls` treats both as "no calls". A second line is written to the log.
 
+**What the chat template made of request 2.** The text is the same as request 1 up to the question (the system message, the reasoning-effort line and the tool instructions are all repeated). After the question, it continued like this (from the same 2026-11-12 rerun):
+
+```text
+<|im_start|>user
+Read notes.txt and tell me the second line.<|im_end|>
+<|im_start|>assistant
+<think>
+
+</think>
+
+<tool_call>
+<function=read_file>
+<parameter=path>
+notes.txt
+</parameter>
+</function>
+</tool_call><|im_end|>
+<|im_start|>user
+<tool_response>
+1	alpha
+     2	beta
+     3	gamma
+</tool_response><|im_end|>
+<|im_start|>assistant
+<think>
+```
+
+Four things to notice:
+
+- **The thinking from request 1 isn't there.** The assistant turn has an empty `<think>` block, because your history doesn't keep `reasoning_content` (step 6). This template would have written it back in if you had sent it; its `preserve_thinking` setting is on by default. So keeping the thinking out is your harness's choice, and here it saved about 20 tokens. In a long session it saves thousands.
+- **Your `arguments` string was turned back into the model's own format.** `"{\"path\":\"notes.txt\"}"` became a `<parameter=path>` block, the same way the model wrote it.
+- **The tool result became a `user` message,** wrapped in `<tool_response>`. **The `tool_call_id` appears nowhere.** The model matches a result to its call by position: results follow the calls in the same order. The id is part of the HTTP API. The server checks it (that's where the `400` errors described at the top of this lesson come from), and your harness uses it, but the model never reads it.
+- **The first line lost its leading spaces.** `read_file` returned `     1\talpha`, but the template trims the start and end of each message, so it became `1\talpha`. Here that doesn't matter. Just remember that the text the model reads isn't always exactly what you sent.
+
+The model's raw output for this request (the `output` entry in the same log):
+
+```text
+The user is asking for the second line of notes.txt. I loaded it. The second line is "beta". Simple.
+</think>
+
+The second line of notes.txt is:
+
+**beta**
+```
+
+LM Studio split it at `</think>`. The part before became `reasoning_content`, and the part after became `content`. There was no `<tool_call>` block, so `tool_calls` came back empty. (This rerun worded its answer slightly differently from the run in the JSON above. The same model can give different text each time.)
+
 #### Step 9. No tool calls, so the loop ends
 
 `turns` becomes 2, `usage` is updated, and the reply goes into the history, which now has its final four messages:
@@ -431,7 +532,9 @@ Each block is one request. "1 messages" and "3 messages" are how long the histor
 | **tool schema** | The JSON description of a tool (name, description, parameters) sent to the model so it knows the tool exists. |
 | **tool call** | The model's request to run a tool: a name, an arguments string and an id. |
 | **tool result** | The `role: "tool"` message the harness sends back, with the call's id. |
-| **chat template** | The model's own recipe for turning messages and tools into one prompt text. The server applies it; your code never sees it (LM Studio's developer log does show it). |
+| **chat template** | The model's own recipe for turning messages and tools into one prompt text. A Jinja program stored in the model file. The server applies it; your code never sees it, but `lms log stream -s model --filter input,output` shows the result. |
+| **special token** | A token with a fixed meaning, such as `<\|im_start\|>` (a message starts) or `<\|im_end\|>` (it ends). |
+| **generation prompt** | The `<\|im_start\|>assistant` (and `<think>`) that the template puts at the end of the prompt, so the model's next words are its reply. |
 | **token** | The unit models read and write; very roughly ¾ of a word. **Prompt tokens** are what the model read; **completion tokens** are what it wrote, reasoning included. |
 | **`finish_reason`** | Why the model stopped: `tool_calls` (wants a tool), `stop` (finished), `length` (ran out of room). |
 | **`model_dump()`** | A method on the library's reply object that converts it into plain dicts and lists, so it can be saved as JSON. |
