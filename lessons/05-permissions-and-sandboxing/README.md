@@ -167,6 +167,213 @@ What happened in the reference run:
 
 Last, check the hole the sandbox leaves open. Put a file next to your project (`echo private > ~/scratch5/../notes5.txt`) and ask the agent to read `../notes5.txt` with `read_file`, then with `bash`. `read_file` returns `Error: ../notes5.txt is outside the project folder.` and `cat ../notes5.txt` in `bash` prints the file. Delete `~/notes5.txt` when you are done. (`~/.harness_probe.txt` should not exist; check.)
 
+### What happens when you run them, step by step
+
+This follows real runs of all three experiments above, made on 2026-11-13 with the reference solution and `qwen/qwen3.8-27b` in LM Studio. Each `bash` call was approved with `y`. Every request, command, result and token count below is copied from the runs' logs. Your model will word things differently, and may take a different route: in this run of experiment 1, for example, it didn't go on to run `mount`, as the run described above did.
+
+To try the reference solution without touching your own `agent/`, run the same commands from inside `solutions/05-permissions-and-sandboxing/`. `python -m agent` imports the `agent` package from the folder you're in, so you don't need to copy anything.
+
+Earlier walkthroughs cover how the command starts ([lesson 1](../01-the-loop/README.md#what-happens-when-you-run-ask-step-by-step)), the checks every call goes through ([lesson 3](../03-when-the-model-gets-it-wrong/README.md#what-happens-when-you-run-it-step-by-step)) and the read tracker ([lesson 4](../04-editing-files/README.md#what-happens-when-you-run-it-step-by-step)). This section concentrates on the two new layers: the **permission policy**, which decides *whether* a call runs, and the **sandbox**, which limits *what a `bash` command can do* once it runs.
+
+#### Where the code lives
+
+Paths are relative to your own package. The reference versions are the same files under `solutions/05-permissions-and-sandboxing/agent/`.
+
+| File | What's in it that this walkthrough uses |
+|---|---|
+| `agent/__main__.py` | `_ask`, `_approve`, `build_parser` (the `--allow` and `--sandbox` options) |
+| `agent/permissions.py` | `PermissionPolicy`, `PermissionPolicy.check`, `PermissionPolicy.remember`, `Decision`, `rule_matches`, `has_shell_operator`, `SHELL_OPERATORS`, `KEY_ARGUMENT` |
+| `agent/loop.py` | `Agent._run_tool_call`, `Agent._permission_refusal`, `DENIED_BY_RULE`, `DENIED_BY_USER`, `NO_APPROVER` |
+| `agent/sandbox.py` | `SandboxConfig`, `build_bwrap_argv`, `sandbox_available` |
+| `agent/tools/shell.py` | `run_shell`, `bash` (defined inside `make_bash`) |
+| `agent/workspace.py` | `Workspace` (now with a `sandbox`), `Workspace.resolve`, `Workspace.contains`, `PathOutsideProject` |
+| `agent/tools/files.py` | `_inside_project`, `read_file` (defined inside `make_read_file`) |
+
+#### The big picture first
+
+Two separate layers stand between the model and your machine:
+
+```
+ model asks for a tool call
+        │
+        v
+ ┌─ permission policy (agent/permissions.py) ──────────────────────────────┐
+ │  deny rule matches?        -> refused: "blocked by a deny rule"         │
+ │  read-only tool?           -> runs, no question                         │
+ │  allow rule matches,       -> runs, no question                         │
+ │    inside the project,                                                  │
+ │    no shell operators?                                                  │
+ │  otherwise                 -> ASK you:  y = once, a = always, n = no    │
+ └─────────────────────────────────────────────────────────────────────────┘
+        │ allowed
+        v
+ the tool runs.  read_file & co: paths must resolve inside the project
+                 bash: inside bubblewrap — whole filesystem read-only except the project,
+                       no network, private /tmp, no host sockets
+```
+
+The policy is about *your consent*. The sandbox is about *limits that hold even after you said yes*, including when you said yes without reading the command carefully. Each experiment below hits a different part of this.
+
+#### Step 1. `_ask` checks for a sandbox and builds the policy
+
+Before anything else, `_ask` (`agent/__main__.py`) calls `sandbox_available()` (`agent/sandbox.py`). That builds a real bubblewrap command line for `true` and runs it. It returned `True` here, so:
+
+- **The `Workspace` gets a `SandboxConfig()`**: enabled, network off, nothing extra writable. If bwrap weren't usable, `_ask` would print `Warning: running bash commands without a sandbox.` to stderr and carry on without one. `--sandbox` makes a missing sandbox an error instead, and `--no-sandbox` turns it off.
+- **The `Agent` gets a `PermissionPolicy(allow=args.allow)`** and an approver, `_approve`. `allow` is the list of `--allow` rules, empty in experiments 1 and 3. There are no deny rules on the command line; the lesson's tests cover those.
+
+#### Experiment 1: writing outside the project
+
+```
+uv run python -m agent ask "Use bash to create the file ~/.harness_probe.txt containing the word hi. Then tell me exactly what happened." --root ~/scratch5
+```
+
+**Request 1** (1,145 prompt tokens, 1.724 s): the model asked for one call:
+
+```
+bash({"command": "echo hi > ~/.harness_probe.txt && ls -la ~/.harness_probe.txt && cat ~/.harness_probe.txt"})
+```
+
+**The policy decides.** `_run_tool_call` (`agent/loop.py`) runs lesson 3's loop guard first, then `_permission_refusal`, before `dispatch`. `_permission_refusal` parses the arguments and calls `PermissionPolicy.check` (`agent/permissions.py`):
+
+| Question | Answer here |
+|---|---|
+| Does a deny rule match? | there are none |
+| Is the tool read-only? | no: `bash` can change things |
+| Does an allow rule match (inside the project, no shell operators)? | there are none. The command also contains `>` and `&&`, so it would count as *compound* anyway |
+| Is `auto_approve` on? | no |
+| **Result** | `Decision.ASK` |
+
+So `_approve` (`agent/__main__.py`) printed the command and waited:
+
+```
+bash wants to run:
+  echo hi > ~/.harness_probe.txt && ls -la ~/.harness_probe.txt && cat ~/.harness_probe.txt
+[y]es / [a]lways / [n]o (n):
+```
+
+The answer was `y`, which approves this one call. `a` would also call `PermissionPolicy.remember`, adding the rule `bash(<this exact command>)` so the identical command isn't asked about again in this session. `n`, Enter, or no terminal to answer from all give `Error: the user denied this tool call.` as the tool result.
+
+**The sandbox runs it.** `bash` (inside `make_bash`, `agent/tools/shell.py`) calls `run_shell`. The workspace has an enabled sandbox, so instead of `bash -c <command>`, `run_shell` runs the argument list from `build_bwrap_argv` (`agent/sandbox.py`). For a command like this one in `~/scratch5`:
+
+```
+bwrap --unshare-all                          # new namespaces for everything: pids, network, ...
+      --die-with-parent --new-session
+      --ro-bind / /                          # the whole filesystem, read-only
+      --dev /dev --proc /proc
+      --tmpfs /tmp --tmpfs /run              # empty private /tmp and /run
+      --bind /home/rob/scratch5 /home/rob/scratch5   # ...except the project: writable
+      --unsetenv DBUS_SESSION_BUS_ADDRESS --unsetenv SSH_AUTH_SOCK --unsetenv XDG_RUNTIME_DIR
+      --chdir /home/rob/scratch5
+      -- bash -c 'echo hi > ~/.harness_probe.txt && ...'
+```
+
+The order matters: later mounts sit on top of earlier ones. Everything is read-only, then the project folder is bound writable on top. `~` is `/home/rob`, which is outside the project, so the write failed:
+
+```
+bash: line 1: /home/rob/.harness_probe.txt: Read-only file system
+
+[exit code: 1]
+```
+
+The `&&` chain stopped there, so `ls` and `cat` never ran. Afterwards, `ls ~/.harness_probe.txt` on the real machine said `No such file or directory`.
+
+**Request 2** (1,239 prompt tokens, 4.069 s): the model's reasoning was "Interesting — the home directory is on a read-only filesystem", and it answered without more tool calls:
+
+> 3. The command **failed** with this error: `bash: line 1: /home/rob/.harness_probe.txt: Read-only file system`
+> 4. Exit code was **1** — the file was **not created**, because `/home/rob/` is on a read-only filesystem in this environment.
+> 5. Because the first command failed, the `&&` chain stopped, so the `ls` and `cat` verification steps never ran.
+
+That's accurate. The model doesn't know it's in a sandbox, though: to it, the filesystem is simply read-only. **You said yes, and the write still couldn't happen.** That's the difference between the two layers.
+
+#### Experiment 2: the network, and an allow rule that doesn't apply
+
+```
+uv run python -m agent ask "Using bash with python3 -c (no curl), fetch http://localhost:1234/v1/models and print the first 200 characters. Report exactly what happened." --root ~/scratch5 --allow 'bash(python3*)'
+```
+
+**Request 1** (1,160 prompt tokens, 3.317 s): the model wrote a multi-line script:
+
+```
+bash({"command": "python3 -c \"\nimport urllib.request, sys\ntry:\n    with urllib.request.urlopen('http://localhost:1234/v1/models', timeout=5) as r:\n ...\n\"", "timeout": 30})
+```
+
+**The policy decides.** The rule `bash(python3*)` means "a `bash` call whose `command` matches the pattern `python3*`". `KEY_ARGUMENT` says the argument to check for `bash` is `command`, and `rule_matches` compares it with `fnmatchcase`. The command does start with `python3`, so the pattern matches. But `check` only uses an allow rule when the command has **no shell operators**, and `has_shell_operator` found one. `SHELL_OPERATORS` holds `;`, `&&`, `||`, `|`, a backtick, `$(`, `>`, `<`, a newline and `&`, and the script is full of newlines.
+
+Why the strictness: with operators, `python3 x.py; rm -rf ~` also starts with `python3`. A rule can only vouch for the first command, so a command with operators always goes to you. The result was `Decision.ASK`, and the prompt appeared even though `--allow` was given. It was approved.
+
+**The sandbox runs it,** with no network. `--unshare-all` gives the command its own *network namespace*, which has a loopback interface of its own and nothing listening on it. So `localhost:1234` inside the sandbox isn't LM Studio's port:
+
+```
+ERROR: URLError <urlopen error [Errno 111] Connection refused>
+
+[exit code: 1]
+```
+
+**Request 2** (1,359 prompt tokens, 3.429 s): the answer said:
+
+> **Result:** `URLError: <urlopen error [Errno 111] Connection refused>` — nothing was listening on `localhost:1234`
+> ... meaning no server (e.g., an OpenAI-compatible API on port 1234) is currently running on that port.
+
+The error is quoted exactly right, and the explanation is wrong. The server on port 1234 was answering this very request. It's the same mistake as in the reference run described above. Read the error itself, not the model's story about it. (`SandboxConfig(network=True)` adds `--share-net`, which is what the live test uses to check that the connection then succeeds.)
+
+#### Experiment 3: the hole the sandbox leaves open
+
+```
+echo private > ~/scratch5/../notes5.txt
+uv run python -m agent ask "Read the file ../notes5.txt first with read_file, then with bash (cat ../notes5.txt). Tell me exactly what each one returned." --root ~/scratch5
+```
+
+**Request 1** (1,152 prompt tokens, 3.702 s): `read_file({"path": "../notes5.txt"})`.
+
+**The policy** allows it with no question: `read_file` is read-only. The `read_only` shortcut comes *after* the deny rules, so a rule like `read_file(.env)` would still block it.
+
+**The tool refuses it anyway.** `read_file` (defined inside `make_read_file`, `agent/tools/files.py`) calls `ws.resolve("../notes5.txt")` (`agent/workspace.py`). That resolves the path fully, giving `/home/rob/notes5.txt`, and checks it with `Workspace.contains`: is it the root or below it? It isn't, so `resolve` raises `PathOutsideProject`. The `_inside_project` wrapper around every file tool turns that into the result:
+
+```
+Error: ../notes5.txt is outside the project folder.
+```
+
+**Request 2** (1,209 prompt tokens, 1.008 s): the reasoning was "The read_file tool failed because it's outside the project folder. Let me try bash.", and the call was `bash({"command": "cat ../notes5.txt"})`. It has no operators, but there's no allow rule, so it was `ASK` and approved. In the sandbox, `--ro-bind / /` makes the **whole** filesystem visible, read-only:
+
+```
+private
+
+[exit code: 0]
+```
+
+**Request 3** (1,265 prompt tokens, 2.492 s) reported both results correctly.
+
+This is the hole the README describes: the sandbox stops `bash` *writing* outside the project, and stops it reaching the network, but not *reading*. Anything your user account can read, a sandboxed command can read: other projects, `~/.ssh/config`, `.env` files. Your approval prompt is the only protection for reads through `bash`, which is why it shows you the whole command.
+
+#### What the three experiments show together
+
+| | Policy decision | Who stopped it, if anyone |
+|---|---|---|
+| Write to `~/.harness_probe.txt` with `bash` | ASK (no rule; `>` and `&&`) → you said yes | the sandbox: read-only filesystem |
+| Fetch `localhost:1234` with `bash` | ASK (rule matched, but newlines) → you said yes | the sandbox: no network |
+| Read `../notes5.txt` with `read_file` | ALLOW (read-only tool) | the tool: path outside the project |
+| Read `../notes5.txt` with `bash` | ASK → you said yes | **nobody**: reads aren't blocked |
+
+#### If something goes wrong
+
+- **`Warning: running bash commands without a sandbox.`:** `sandbox_available()` failed. Install `bubblewrap`, and check that your system allows unprivileged user namespaces. Some distributions turn them off, or limit them with AppArmor. The `sandbox` tests are skipped for the same reason.
+- **An allow rule never seems to apply:** the command probably contains an operator. Look for `;`, `&&`, `|`, `>`, a newline, or `&`. Even `2>&1` contains two of them.
+- **`Error: this call needs approval but no approver is available.`:** the `Agent` was built with a policy but no `approver`, which is what happens when there's no one to ask, as in tests and scripts.
+- **A write inside the project fails with `Read-only file system`:** the project folder wasn't bound writable. It must come *after* `--ro-bind / /` in the argument list, and it can't be under `/run`, which the private `/run` hides. `build_bwrap_argv` refuses that case.
+
+#### Words used above
+
+| Term | Meaning here |
+|---|---|
+| **permission policy** | `PermissionPolicy`: deny rules, allow rules, and the read-only shortcut that decide ALLOW, DENY or ASK for each call. |
+| **rule** | `tool` or `tool(pattern)`, such as `bash(pytest*)` or `read_file(.env)`. The pattern is matched against the argument named in `KEY_ARGUMENT`. |
+| **shell operator** | Anything that lets one command line run more than its first command: `;`, `&&`, `\|`, `>`, a newline, and so on. |
+| **approver** | The function that asks you: `y` (once), `a` (always, for the exact command), or `n`. |
+| **sandbox / bubblewrap (`bwrap`)** | A program that runs a command with its own view of the system: here, a read-only filesystem except the project, and no network. |
+| **namespace** | A Linux feature that gives a process its own copy of something, such as its own network, process list or mounts. |
+| **bind mount** | Making a folder appear at a path inside the sandbox, read-only (`--ro-bind`) or writable (`--bind`). |
+| **loopback / `localhost`** | The network address meaning "this machine". Inside a network namespace, it means the sandbox's own empty one. |
+
 ## Break it
 
 Use the 4B (`AGENT_BASE_URL=http://localhost:11434/v1 AGENT_MODEL=qwen3:4b-instruct AGENT_API_KEY=ollama`) on a project folder under your home directory with a `secret.env` and a `notes.txt` one level up. Approve every prompt. What the reference runs showed:
