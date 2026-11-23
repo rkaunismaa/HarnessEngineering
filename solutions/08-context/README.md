@@ -137,7 +137,9 @@ From inside this folder, set a deliberately small window so compaction happens q
 
 ```
 uv run python ../../scripts/make_fixture.py scratch /tmp/scratch8
-AGENT_CONTEXT_WINDOW=4000 uv run python -m agent chat --root /tmp/scratch8
+AGENT_CONTEXT_WINDOW=2000 uv run python -m agent chat --root /tmp/scratch8
 ```
 
-Ask it to read several files one after another, and watch for `Context compacted: ...`. Then `uv run python -m agent log` shows the `compact` request and its summary between the `main` requests. The lesson's README has the real overflow error and a compaction run. [TESTING.md](../../lessons/08-context/TESTING.md) walks through the compaction test message by message.
+Ask it to read several files one after another, and watch for `Context compacted: ...`. The window has to be this small because the practice project's files are tiny. With `4000` (a threshold of 3,200 tokens), four turns of reading every file topped out at 2,200 prompt tokens, and nothing was compacted. With `2000`, a run on 2026-11-23 compacted from the second turn on.
+
+That run also shows two things to expect from a window this small. The system prompt and tool schemas alone are about 1,270 tokens, so the history goes over the 1,600-token threshold again straight after each compaction, and compaction happens on nearly every request. And a summary can be longer than the short messages it replaces: one compaction reported `about 592 -> 654 tokens`. Compaction pays off when old messages are large, not on a toy project. Then `uv run python -m agent log` shows the `compact` request and its summary between the `main` requests. The lesson's README has the real overflow error and a compaction run. [TESTING.md](../../lessons/08-context/TESTING.md) walks through the compaction test message by message.
