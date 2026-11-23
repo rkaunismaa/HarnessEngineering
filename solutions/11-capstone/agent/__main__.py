@@ -8,6 +8,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+import openai
 from rich.console import Console
 from rich.markup import escape
 from rich.prompt import Prompt
@@ -32,8 +33,14 @@ def _smoke(args) -> int:
     config = load_config()
     try:
         result = smoke_test(make_client(config), config.model)
-    except Exception as e:  # server down, wrong model name, ...
+    except openai.APIConnectionError as e:  # server not running, wrong address, timeout
         print(f"FAIL: could not reach {config.base_url}: {e}")
+        return 1
+    except openai.APIStatusError as e:  # the server answered, with an error (e.g. unknown model)
+        print(f"FAIL: {config.base_url} answered with an error: {e}")
+        return 1
+    except Exception as e:  # anything else: still one line, not a traceback
+        print(f"FAIL: {type(e).__name__}: {e}")
         return 1
     print(f"{'OK' if result.ok else 'FAIL'}: {result.detail}")
     print(f"  tool: {result.tool_name}  arguments: {result.arguments}  "

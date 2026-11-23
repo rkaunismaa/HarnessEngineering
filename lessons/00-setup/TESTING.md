@@ -294,7 +294,13 @@ OK: read_file('notes.txt')
   tool: read_file  arguments: {'path': 'notes.txt'}  prompt tokens: 322
 ```
 
-It returns 0 on success and 1 on failure. If the request itself raises (server not running, wrong model name), the `except` prints a `FAIL: could not reach ...` line instead of a traceback. If you see that line, check that LM Studio's server is running: `lms server start`, or the Developer tab in the app.
+It returns 0 on success and 1 on failure. If the request itself raises, one of three `except` clauses prints a single `FAIL:` line instead of a traceback:
+
+- **`openai.APIConnectionError`** (which includes timeouts): nothing answered. It prints `FAIL: could not reach http://localhost:1234/v1: Connection error.` Check that LM Studio's server is running: `lms server start`, or the Developer tab in the app.
+- **`openai.APIStatusError`**: the server answered, with an error code. A wrong model name on Ollama gives `FAIL: http://localhost:11434/v1 answered with an error: Error code: 404 - model 'does-not-exist' not found`. The server is fine; the setting is wrong.
+- **Any other exception**: its type and message, such as `FAIL: ValueError: ...`.
+
+Telling the first two apart matters, because they need opposite fixes: start the server, or change your settings.
 
 **Nothing reads `notes.txt`.** The file doesn't need to exist. The smoke test only checks whether the model *asks* to call a tool, in the right format. Nobody runs that call, and no tool result is sent back.
 

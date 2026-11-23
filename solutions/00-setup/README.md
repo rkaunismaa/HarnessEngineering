@@ -100,7 +100,10 @@ OK: read_file('notes.txt')
 
 (The token count depends on the model and server.) The exit status is 0 for `OK` and 1 otherwise.
 
-- **Any exception from the request is caught** and printed as `FAIL: could not reach http://localhost:1234/v1: Connection error.`. A stopped server or a wrong model name gives one readable line instead of a traceback.
+- **Any exception from the request is caught** and printed as one line, instead of a traceback. The line says which kind of failure it was, because they need different fixes:
+  - nothing answered (`openai.APIConnectionError`, which includes timeouts): `FAIL: could not reach http://localhost:1234/v1: Connection error.` Start the server, or fix `base_url`.
+  - the server answered with an error (`openai.APIStatusError`), such as a wrong model name on Ollama: `FAIL: http://localhost:11434/v1 answered with an error: Error code: 404 - model 'does-not-exist' not found`. The server is fine; fix the setting.
+  - anything else: `FAIL: <ExceptionType>: <message>`.
 - **`argparse` subcommands**, with `required=True`. Later lessons add `ask`, `log`, `chat`, `run` and `eval` the same way, each with its own function.
 - **`main(argv)` takes its arguments as a parameter**, so the tests can call it directly.
 
