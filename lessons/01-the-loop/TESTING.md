@@ -101,7 +101,7 @@ That last check is the key one: the last message in request 2 must be the tool r
 
 **What goes into the history**
 
-- **`test_reasoning_not_in_history`**: the scripted reply carries `reasoning_content`, and none of the stored messages may contain it. Qwen-style chat templates don't expect earlier reasoning to be sent back.
+- **`test_reasoning_not_in_history`**: the scripted reply carries `reasoning_content`, and none of the stored messages may contain it. Sending it back would cost prompt tokens on every later request, and Qwen's guidance is to leave it out. The Qwen3.8 template would accept it, so leaving it out is the harness's choice (see "Reasoning stays out of the history" in the lesson's README).
 - **`test_assistant_message_with_tool_calls_is_plain_dict`**: the stored assistant message must be a plain dict with exactly this shape, not an SDK object. Its arguments stay a JSON *string*. It also checks a missing file: the tool result is `"Error: file not found: missing.txt"` rather than an exception. A tool error is something to tell the model, not a reason to crash the loop.
 - **`test_usage_summed`**: the token counts from both replies are added up (100 + 100 prompt tokens, 20 + 20 completion tokens).
 - **`test_history_persists_across_runs`**: calling `run` twice on the same `Agent` sends `["first", "one", "second"]` in request 2. Keeping the history is what makes it a conversation.
@@ -110,7 +110,7 @@ That last check is the key one: the last message in request 2 must be the tool r
 
 - **`test_read_file_offset_limit`** calls `tools.dispatch(...)` directly with arguments as a JSON string, the way the model would send them, and checks the line-numbered slice.
 - **`test_read_file_is_read_only_and_registered`** checks the registry. The tool is flagged `read_only`, which lesson 5's permissions use. The schema has exactly the keys the OpenAI format expects.
-- **`test_workspace_resolve`** checks that the workspace turns relative paths into absolute ones under its root. Lesson 2 builds on this to stop paths from escaping the root.
+- **`test_workspace_resolve`** checks that the workspace turns relative paths into absolute ones under its root. It doesn't stop a path from leaving the root yet: `../x` and absolute paths still work. Lesson 5 makes `resolve` refuse them.
 
 ## `test_log.py`
 

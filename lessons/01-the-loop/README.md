@@ -497,7 +497,7 @@ TurnResult(final_text="The second line of notes.txt is **beta**.",
 The second line of notes.txt is **beta**.
 ```
 
-The `**` is Markdown bold. The model writes Markdown, and `ask` prints the raw text; lesson 7 renders it. `_ask` returns 0, `main()` returns it, and `SystemExit(0)` ends the process with exit code 0.
+The `**` is Markdown bold. The model writes Markdown, and `ask` prints the raw text, so you see the asterisks as typed. `_ask` returns 0, `main()` returns it, and `SystemExit(0)` ends the process with exit code 0.
 
 When the process ends, the `Agent` object and its history are gone. **Only the log file remains.** Every `ask` starts a fresh conversation. (Lesson 7's `chat` keeps one `Agent` alive between questions instead.)
 

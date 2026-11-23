@@ -41,7 +41,7 @@ Extend your `agent/` package. Tests are in `lessons/03-when-the-model-gets-it-wr
 | `validate_args` finds problems | `"Error: " + "; ".join(errors)` |
 | The tool raises any `Exception` | `f"Error: {type(exc).__name__}: {exc}"` |
 
-Because this covers every exception, the lesson 2 tools that still raised (for example `list_files` with an empty or absolute glob) now come back as `Error: ValueError: ...` text with no change to the tools themselves.
+Because this covers every exception, the lesson 2 tools that still raised (for example `list_files` with an empty glob, which raises `ValueError`, or an absolute one, which raises `NotImplementedError` on the Python 3.10 this course was checked with) now come back as `Error: ValueError: ...` or `Error: NotImplementedError: ...` text, with no change to the tools themselves.
 
 `validate_args(schema: dict, args: dict) -> list[str]` checks `args` against a tool's `parameters` schema and returns one message per problem, in this order: missing required parameters (in the order of `required`), then unknown parameters (in the order of `args`), then type problems (in the order of `args`).
 

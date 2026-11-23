@@ -121,6 +121,7 @@ In lesson 2, `ask` printed an empty answer and exited with 0 in these cases, or 
 | The repeated-call guard only sees *identical* calls | a model alternating between two calls, or changing one character each time, isn't caught; `max_turns` is the only backstop | not in this course |
 | No retries for temporary server errors | one dropped connection ends the run (the `openai` library itself retries twice first) | not in this course (an extra in the lesson) |
 | No editing tools | — | lesson 4 |
+| `read_file`, `list_files` and `search` accept paths outside the project (`../x`, absolute paths, a `../*` pattern) | the model can read and list files anywhere your user account can | lesson 5 |
 | No sandbox or permission rules | an approved `bash` command can do anything you can | lesson 5 |
 | No system prompt | the model doesn't know these rules exist until it breaks one | lesson 6 |
 

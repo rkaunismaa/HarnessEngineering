@@ -133,6 +133,7 @@ def _confirm_bash(command: str) -> bool:
 | `dispatch` raises on bad JSON or wrong arguments; tools can still raise (`list_files` with an absolute glob) | one bad call ends the session with a traceback | lesson 3 |
 | No limit on requests; no check for repeated calls | a confused model can loop forever | lesson 3 |
 | No way to edit a file except through `bash` | edits are blind and unchecked | lesson 4 |
+| `read_file`, `list_files` and `search` accept paths outside the project (`../x`, absolute paths, a `../*` pattern) | the model can read and list files anywhere your user account can | lesson 5 |
 | `bash` isn't sandboxed; background jobs hang the call | an approved command can damage anything you own | lesson 5 |
 | Asking is all-or-nothing for `bash` only | no rules like "always allow `pytest`", no protection for other tools | lesson 5 |
 

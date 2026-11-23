@@ -171,7 +171,7 @@ The last line matters most. A tool that printed the refusal but ran the command 
 ## If a test fails
 
 - **A list comparison fails:** pytest prints both lists. Look for junk folders that weren't skipped, missing sorting, or absolute paths where relative ones were expected.
-- **The timeout test fails on time:** your `bash` probably waits for the process to finish before checking the timeout. Use `subprocess.run(..., timeout=...)` and catch `TimeoutExpired`, keeping the output collected so far.
+- **The timeout test fails on time:** your `bash` probably waits for the process to finish before checking the timeout. Start the command in its own process group (`start_new_session=True`), wait with `proc.wait(timeout=...)`, and on `TimeoutExpired` kill the whole group with `os.killpg`, keeping the output collected so far. Don't use `subprocess.run(..., timeout=...)`: it passes this test, but on a timeout it kills only `bash`. A child such as `sleep` keeps running after your call has returned.
 - **`test_bash_declined` fails on the file check:** you call `confirm_bash` but run the command regardless of its answer.
 
 ## Words used above
