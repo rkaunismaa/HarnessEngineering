@@ -123,7 +123,7 @@ Fix the problem, then finish.
 - **The real output goes back, capped with `truncate`**, so the model sees the actual failing test names and errors, not a summary.
 - **It gives up after `max_verify_attempts` failed checks** (2 by default), and the run ends with `stop_reason="done"` and `verified=False`. A model that can't fix it shouldn't be kept looping, and the failure is reported, not hidden.
 - **Each continuation is a normal request**, so it counts towards `max_turns`.
-- **`TurnResult.verified` has three values:** `True` (checked and passed), `False` (checked and failed), and `None` (no check ran, or the run stopped at `max_turns`, before the model finished). Lesson 11's evaluation reports them separately.
+- **`TurnResult.verified` has three values:** `True` (checked and passed), `False` (the last check failed), and `None` (no check ran at all). It's the result of the last check that ran, whatever stopped the run: if a check failed and the run then hit `max_turns`, `stop_reason` is `"max_turns"` and `verified` is `False`. Lesson 11's evaluation reports them separately.
 - **No `verify` means lesson 8's behaviour, exactly.**
 
 ### `agent/__main__.py` (changed): `--verify`

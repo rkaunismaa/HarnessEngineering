@@ -204,7 +204,7 @@ def _approve(name: str, args: dict) -> str:
 | Same kernel, same user, no resource limits | a fork bomb still works; unknown sockets elsewhere are still reachable | not in this course |
 | Everything in the project is writable, including `.git/hooks` | a hook the agent writes runs *outside* the sandbox the next time you commit | not in this course; check `git status` |
 | Allow and deny rules only come from the command line | no saved per-project settings | not in this course (an extra in the lesson) |
-| The model isn't told about the sandbox | it explains a refused network connection as "no server is running" | partly lesson 6 (the system prompt) |
+| The model isn't told about the sandbox | it explains a refused network connection as "no server is running" | not in this course (lesson 6's system prompt doesn't mention the sandbox) |
 
 ## Seeing it work
 

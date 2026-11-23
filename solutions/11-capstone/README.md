@@ -2,7 +2,7 @@
 
 This folder is the reference solution for [lesson 11](../../lessons/11-capstone/README.md), the capstone. This page compares its `agent/` package with the one in [`solutions/10-subagents/agent/`](../10-subagents/agent/), file by file. For each change it says what the code does, why it's written that way, and what it's meant to show you.
 
-To run this solution without touching your own `agent/` folder, use `uv run python scripts/run_solution.py solutions/11-capstone <command>` from the repository root, or run commands from inside this folder (`cd solutions/11-capstone`). `python -m agent` imports the `agent` package from the folder you're in. To run the lesson's tests against it: `uv run pytest lessons/11-capstone --impl solutions/11-capstone`, from the repository root.
+To run this solution without touching your own `agent/` folder, use `uv run python scripts/run_solution.py solutions/11-capstone <command>` from the repository root. `scripts/run_solution.py` puts this folder's `agent` package first on the import path. For this lesson, stay in the repository root rather than running `python -m agent` from inside this folder, as earlier solutions allow: `eval`'s defaults, `capstone/buggy_project` and `capstone/eval/check.py`, are paths relative to the root. From inside this folder, `eval` stops with `No such project: capstone/buggy_project`. To run the lesson's tests against it: `uv run pytest lessons/11-capstone --impl solutions/11-capstone`, from the repository root.
 
 ## At a glance
 
