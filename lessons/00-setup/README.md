@@ -87,6 +87,32 @@ On this trivial task it passed (162 prompt tokens: a different tokenizer and tem
 - Point `AGENT_BASE_URL` at a closed port (`http://localhost:1/v1`): the smoke test must exit 1 with a readable "could not reach" line, not a traceback.
 - Set `AGENT_MODEL=does-not-exist`: LM Studio (observed) quietly answers with the loaded model anyway, so this still passes there. Try it against Ollama too and compare: a missing model is an error there, and your command should still exit 1 without a traceback. Its message shouldn't say "could not reach": the server was reached, and the model name is what's wrong. The reference solution tells these cases apart with `openai.APIConnectionError` and `openai.APIStatusError`.
 
+## Switching to a different model
+
+No code changes: switching is two or three settings, then a check that the new model can call tools.
+
+1. **Load it in LM Studio**, with the context length you want. It has to fit in GPU memory together with that context: the 27B at Q4 with a 32K window uses about 20 GB of a 24 GB card. If the model is split across a second, slower GPU, it runs on both, and the slow card sets the pace. A 27B split across an RTX 4090 and an RTX 2070 was measured at about 1.6-1.8× slower than on the 4090 alone (2026-11-25).
+2. **Tell the harness**, with environment variables:
+
+   ```
+   AGENT_MODEL=<identifier from `lms ps`>
+   AGENT_CONTEXT_WINDOW=<the context length it was loaded with>
+   ```
+
+   or the same in `agent.json`: `{"model": "<identifier>", "context_window": 32768}`.
+
+   - **Copy the name exactly** from the IDENTIFIER column of `lms ps`. LM Studio answers a wrong name with whatever model is loaded (see "Break it"), so a typo still works, and your logs record the wrong model.
+   - **`context_window` must match the loaded window.** Nothing reads it until lesson 8, which compacts the history at 80% of it. Set it higher than the real window and the server rejects requests before the harness compacts; set it lower and the harness compacts sooner than it needs to.
+   - **`agent.json` is read from the folder you run the command in.** One in the repository root does nothing when you run a solution from inside `solutions/NN`. Environment variables apply wherever you run.
+   - **Another server needs `AGENT_BASE_URL` too**, as in the Ollama example above.
+3. **Run `uv run python -m agent smoke`.** Everything in the course depends on it passing. The model must be trained for tool use (`lms ps --json` shows `trainedForToolUse`), and its chat template must support tools. If the reply has no tool call, choose another model. No harness setting fixes that.
+4. **Expect different behaviour.**
+   - The lesson tests use `FakeClient`, so they don't depend on the model. Only the `--live` tests do, and a weaker model may fail them.
+   - The numbers in the lesson READMEs (prompt tokens, timings, which tool the model called first) come from `qwen/qwen3.8-27b`. Yours will differ.
+   - Reasoning ("thinking") models generate their reasoning before every answer, so each request takes longer.
+   - If the model's page gives sampling settings, set them with `AGENT_TEMPERATURE` and `AGENT_TOP_P`. Otherwise the server's defaults apply.
+5. **To compare models, measure.** One run of each tells you little. Lesson 11's `eval` runs the same task many times: change only the model, and compare the success rate, turns, tokens and seconds.
+
 ## Extras
 
 - Support `AGENT_*` values in a `.env` file.
