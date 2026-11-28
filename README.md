@@ -99,3 +99,5 @@ docs/                  the course's design notes, and extra reading such as the 
 ## Further reading
 
 [Reading Qwen Code alongside the course](docs/qwen-code-reading-guide.md) maps each lesson to the matching code in [Qwen Code](https://github.com/QwenLM/qwen-code), an open-source production coding agent, with questions comparing it to your version. Read each part after finishing the lesson.
+
+**Build an AI Agent (From Scratch)** by Jungjun Hur and Younghee Song (Manning, 2026; code at [shangrilar/ai-agent-from-scratch](https://github.com/shangrilar/ai-agent-from-scratch)) builds a general-purpose research agent from scratch, using hosted APIs (OpenAI, Tavily, E2B). It covers what this course leaves out (retrieval, long-term memory, reflection, multi-agent patterns, MCP, skills, LLM-as-a-judge), and its chapters pair with lessons here: chapter 6 with lesson 8, 7 with 9, 9 with 10, and 10 with 11.
