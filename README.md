@@ -93,4 +93,9 @@ testing/               the scripted fake model the tests use
 scripts/               check_solutions.py, run_solution.py, make_fixture.py
 fixtures/              practice projects for the live exercises (make_fixture.py copies them)
 capstone/              the buggy project and the hidden-test checker used by lesson 11
+docs/                  the course's design notes, and extra reading such as the Qwen Code reading guide
 ```
+
+## Further reading
+
+[Reading Qwen Code alongside the course](docs/qwen-code-reading-guide.md) maps each lesson to the matching code in [Qwen Code](https://github.com/QwenLM/qwen-code), an open-source production coding agent, with questions comparing it to your version. Read each part after finishing the lesson.
